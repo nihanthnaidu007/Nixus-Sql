@@ -1,18 +1,19 @@
 import json
 import logging
-from dotenv import load_dotenv
 from datetime import datetime
+
+from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 
 load_dotenv()
 
 from nixus.db.fewshot_store import store_fewshot_example
 from nixus.db.query_cache import store_cache_entry
-from nixus.utils.embeddings import embed_text
-from nixus.utils.confidence import assess_confidence, level_to_score
-from nixus.utils.retry import llm_retry
+from nixus.graph.explanation_check import describe_result_plainly, is_overstated
 from nixus.graph.state import SQLAgentState
-from nixus.graph.explanation_check import is_overstated, describe_result_plainly
+from nixus.utils.confidence import assess_confidence, level_to_score
+from nixus.utils.embeddings import embed_text
+from nixus.utils.retry import llm_retry
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ the ranges, and the row count."""
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 def _store_confidence(state, *, correction_attempts, grounded_cleanly, row_count):

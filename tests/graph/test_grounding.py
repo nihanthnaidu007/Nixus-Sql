@@ -11,7 +11,6 @@ import pytest
 
 from nixus.graph.grounding import SchemaView, check_grounding
 
-
 # Tables: Track{TrackId, Name, AlbumId}, Album{AlbumId, Title}
 VIEW = SchemaView(tables={
     "track": {"TrackId", "Name", "AlbumId"},

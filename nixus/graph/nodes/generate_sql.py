@@ -1,12 +1,14 @@
-from nixus.config import settings
 import logging
-from dotenv import load_dotenv
 from datetime import datetime
+
+from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
+
+from nixus.config import settings
 from nixus.graph.state import SQLAgentState
+from nixus.safety.write_guard import contains_write_operation
 from nixus.utils.retry import llm_retry
 from nixus.utils.sql_safety import is_read_only_sql
-from nixus.safety.write_guard import contains_write_operation
 
 load_dotenv()
 
@@ -40,7 +42,7 @@ Key entities: {entities}"""
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def generate_sql_node(state: SQLAgentState) -> SQLAgentState:

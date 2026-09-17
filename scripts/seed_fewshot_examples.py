@@ -3,17 +3,19 @@ Seed 25 golden few-shot Q-SQL examples covering 5 query types.
 --skip-if-exists: if fewshot_examples count > 0, exit early.
 """
 import asyncio
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from nixus.utils.embeddings import embed_texts
-from nixus.db.connection import sync_engine as engine
 from sqlalchemy import text
+
+from nixus.db.connection import sync_engine as engine
+from nixus.utils.embeddings import embed_texts
 
 EXAMPLES = [
     # AGGREGATION (5)

@@ -14,14 +14,13 @@ from nixus.utils.confidence import (
     level_to_score,
 )
 
-
 # Signal kwargs for a fully clean run.
-CLEAN = dict(
-    clarification_happened=False,
-    correction_attempts=0,
-    grounded_cleanly=True,
-    row_count=5,
-)
+CLEAN = {
+    "clarification_happened": False,
+    "correction_attempts": 0,
+    "grounded_cleanly": True,
+    "row_count": 5,
+}
 
 
 def test_clean_path_is_high_with_no_reasons():

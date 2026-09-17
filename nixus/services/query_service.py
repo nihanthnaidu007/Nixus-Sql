@@ -17,7 +17,7 @@ import time
 from nixus.graph.graph import build_graph
 from nixus.graph.state import SQLAgentState
 from nixus.utils.langsmith_config import get_run_config
-from nixus.utils.logging_config import log_query_start, log_query_complete
+from nixus.utils.logging_config import log_query_complete, log_query_start
 
 # Same logger channel the API used for these lines, so log output is unchanged.
 logger = logging.getLogger("nixus_sql.api")

@@ -11,8 +11,8 @@ Passes if: the API returns rows and no error for all 5 queries.
 """
 
 import pytest
-from eval.conftest import run_query, extract_rows
 
+from eval.conftest import extract_rows, run_query
 
 TRICKY_QUERIES = [
     # Requires window function PARTITION BY with aggregate in CTE

@@ -1,28 +1,32 @@
-from nixus.config import settings
 from dotenv import load_dotenv
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.graph import END, StateGraph
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+from nixus.config import settings
 from nixus.graph.state import SQLAgentState
 
 load_dotenv()
 
 MAX_ATTEMPTS = settings.max_correction_attempts
 
-from nixus.graph.nodes.scope_classifier import scope_classifier_node, scope_response_node
-from nixus.graph.nodes.parse_intent import parse_intent_node
 from nixus.graph.nodes.check_cache import check_cache_node
-from nixus.graph.nodes.retrieve_schema import retrieve_schema_node
-from nixus.graph.nodes.retrieve_fewshot import retrieve_fewshot_node
+from nixus.graph.nodes.check_result import check_result_node
+from nixus.graph.nodes.classify_chart import classify_chart_node
+from nixus.graph.nodes.execute_query import execute_query_node
+from nixus.graph.nodes.explain_result import explain_result_node
 from nixus.graph.nodes.generate_sql import generate_sql_node
+from nixus.graph.nodes.parse_intent import parse_intent_node
+from nixus.graph.nodes.retrieve_fewshot import retrieve_fewshot_node
+from nixus.graph.nodes.retrieve_schema import retrieve_schema_node
+from nixus.graph.nodes.scope_classifier import (
+    scope_classifier_node,
+    scope_response_node,
+)
+from nixus.graph.nodes.self_correct import self_correct_node
 from nixus.graph.nodes.validate_syntax import validate_syntax_node
 from nixus.graph.nodes.verify_grounding import verify_grounding_node
-from nixus.graph.nodes.execute_query import execute_query_node
-from nixus.graph.nodes.check_result import check_result_node
-from nixus.graph.nodes.self_correct import self_correct_node
-from nixus.graph.nodes.classify_chart import classify_chart_node
-from nixus.graph.nodes.explain_result import explain_result_node
 
 # The LangGraph checkpointer is NIXUS-owned bookkeeping → STATE database.
 # AsyncPostgresSaver uses psycopg3 (not asyncpg) and requires the URL in plain

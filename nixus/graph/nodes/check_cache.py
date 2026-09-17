@@ -1,14 +1,15 @@
-from nixus.config import settings
 from datetime import datetime
-from nixus.db.query_cache import search_cache, increment_hit_count
-from nixus.utils.embeddings import embed_text
+
+from nixus.config import settings
+from nixus.db.query_cache import increment_hit_count, search_cache
 from nixus.graph.state import SQLAgentState
+from nixus.utils.embeddings import embed_text
 
 CACHE_HIT_THRESHOLD = settings.cache_similarity_threshold
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def check_cache_node(state: SQLAgentState) -> SQLAgentState:

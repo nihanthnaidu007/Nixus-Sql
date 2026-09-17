@@ -5,21 +5,22 @@ decorators at call sites, not at the function definition level,
 so they can be tested without patching decorators.
 """
 import logging
+
 from tenacity import (
+    before_sleep_log,
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
 )
 
 logger = logging.getLogger(__name__)
 
 try:
-    from anthropic import RateLimitError as AnthropicRateLimitError
     from anthropic import APIConnectionError as AnthropicConnectionError
-    from anthropic import InternalServerError as AnthropicInternalError
     from anthropic import APIStatusError as AnthropicStatusError  # noqa: F401
+    from anthropic import InternalServerError as AnthropicInternalError
+    from anthropic import RateLimitError as AnthropicRateLimitError
     _anthropic_errors = (
         AnthropicRateLimitError,
         AnthropicConnectionError,
@@ -29,9 +30,9 @@ except ImportError:
     _anthropic_errors = (Exception,)
 
 try:
-    from openai import RateLimitError as OpenAIRateLimitError
     from openai import APIConnectionError as OpenAIConnectionError
     from openai import InternalServerError as OpenAIInternalError
+    from openai import RateLimitError as OpenAIRateLimitError
     _openai_errors = (
         OpenAIRateLimitError,
         OpenAIConnectionError,

@@ -125,9 +125,7 @@ def _is_descriptive_context(text: str, match: re.Match) -> bool:
     if _DATA_OBJECT.search(after):
         return True
     around = text[max(0, match.start() - 40): match.end() + _GUARD_WINDOW]
-    if _QUERY_MECHANICS.search(around):
-        return True
-    return False
+    return bool(_QUERY_MECHANICS.search(around))
 
 
 def is_overstated(explanation: str, question: str = "") -> OverstatementResult:

@@ -35,18 +35,20 @@ load_dotenv()
 
 from sqlalchemy import text
 
-# THE core entry — the same one api/main.py calls. Imported here so it is also the
-# patch point the adapter tests target.
-from nixus.services.query_service import run_query
+# Terminal rendering (pure formatting; no logic) lives in a sibling helper so this
+# adapter stays thin.
+from nixus.cli_render import render_answer, render_refusal
 from nixus.db.connection import get_state_engine, get_target_engine
+
 # The LangGraph checkpointer lifecycle — opened/closed around the run exactly as
 # the API does in its FastAPI lifespan. This is adapter INFRASTRUCTURE the core
 # requires (not query logic): the API's lifespan owns it for the server; the CLI
 # owns it for one invocation. The CLI still drives the run only through run_query.
-from nixus.graph.graph import init_checkpointer, aclose_checkpointer
-# Terminal rendering (pure formatting; no logic) lives in a sibling helper so this
-# adapter stays thin.
-from nixus.cli_render import render_answer, render_refusal
+from nixus.graph.graph import aclose_checkpointer, init_checkpointer
+
+# THE core entry — the same one api/main.py calls. Imported here so it is also the
+# patch point the adapter tests target.
+from nixus.services.query_service import run_query
 
 # Outcome discriminator values the core returns. Held as plain literals (not
 # imported from the graph) so the adapter never reaches into core logic — it only
@@ -138,7 +140,7 @@ async def _ping(engine) -> tuple[bool, str | None]:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return True, None
-    except Exception as exc:  # noqa: BLE001 — any failure is an unreachable DB
+    except Exception as exc:  # any failure is an unreachable DB
         return False, str(exc).splitlines()[0]
 
 

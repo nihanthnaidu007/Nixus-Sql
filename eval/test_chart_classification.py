@@ -13,8 +13,8 @@ Chart logic summary:
 """
 
 import pytest
-from eval.conftest import run_sql
 
+from eval.conftest import run_sql
 
 # Each entry: (test_id, sql, expected_chart_type)
 CHART_CASES = [

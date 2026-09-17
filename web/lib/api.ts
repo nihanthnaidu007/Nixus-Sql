@@ -811,3 +811,226 @@ export const fetchHealth = () => fetchStatus<HealthStatus>("/api/v1/health");
 export const fetchCacheStats = () => fetchStatus<CacheStats>("/api/v1/cache-stats");
 export const fetchFewshotStats = () =>
   fetchStatus<FewshotStats>("/api/v1/fewshot-stats");
+
+// ---- Phase 2 W1: exports, saved queries, query history ---------------------
+//
+// ADDITIVE. Three new read-only surfaces the backend already gates:
+//   · POST /api/v1/export/{csv|xlsx|json} — executes the CURRENT result's SQL
+//     under the pipeline's own guardrails (statement timeout, ROW_FETCH_LIMIT,
+//     read-only role). A capped export downloads the CAPPED set and says so
+//     (X-Nixus-Capped header) — we surface that label in the UI, honestly.
+//   · /api/v1/saved-queries — CRUD + re-run. The re-run sends the saved
+//     NATURAL-LANGUAGE question back through the normal /run pipeline (the
+//     client never executes stored SQL — the backend doesn't either).
+//   · /api/v1/history — the pipeline's write-on-execute record, paginated,
+//     filterable by status and date.
+
+export type ExportFormat = "csv" | "xlsx" | "json";
+
+/** The outcome of one export click: the browser gets a file, or the user gets
+ *  a readable message. `capped` mirrors the server's honest cap label. */
+export interface ExportOutcome {
+  ok: boolean;
+  filename: string | null;
+  capped: boolean;
+  rowLimit: number | null;
+  error: string | null;
+}
+
+/** Download one export for an already-run query's SQL. NEVER throws for an
+ *  expected failure (rejected write, query error) — those come back as
+ *  `error`; only construction mistakes would throw. */
+export async function exportResult(
+  sql: string,
+  format: ExportFormat,
+  name?: string,
+): Promise<ExportOutcome> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/v1/export/${format}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ sql, name }),
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      filename: null,
+      capped: false,
+      rowLimit: null,
+      error: `Could not reach the API at ${API_BASE_URL}. Is the stack up? (${
+        e instanceof Error ? e.message : String(e)
+      })`,
+    };
+  }
+
+  if (!res.ok) {
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (body?.detail?.error) msg = String(body.detail.error);
+      else if (body?.detail) msg = String(body.detail);
+      else if (body?.error) msg = String(body.error);
+    } catch {
+      /* no JSON body — keep the status line */
+    }
+    return {
+      ok: false,
+      filename: null,
+      capped: false,
+      rowLimit: null,
+      error: msg,
+    };
+  }
+
+  // The download itself: a Blob + a synthetic anchor click, the standard way to
+  // honor Content-Disposition without a server-rendered page. The cap labels
+  // ride the headers — read them BEFORE consuming the body.
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : `export.${format}`;
+  const capped = (res.headers.get("X-Nixus-Capped") ?? "") === "true";
+  const rowLimit = res.headers.get("X-Nixus-Row-Limit")
+    ? Number(res.headers.get("X-Nixus-Row-Limit"))
+    : null;
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  return { ok: true, filename, capped, rowLimit, error: null };
+}
+
+// ---- Saved queries ----------------------------------------------------------
+
+/** One saved query as the API returns it (nixus/db/saved_query_store.py). */
+export interface SavedQuery {
+  id: number;
+  name: string;
+  description: string | null;
+  tags: string[];
+  natural_language: string;
+  generated_sql: string;
+  parameters: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  last_run_at: string | null;
+}
+
+export async function fetchSavedQueries(tag?: string): Promise<SavedQuery[]> {
+  const qs = tag ? `?tag=${encodeURIComponent(tag)}` : "";
+  const res = await fetch(`${API_BASE_URL}/api/v1/saved-queries${qs}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new ApiError(`Could not load saved queries (${res.status})`, res.status);
+  const body = await res.json();
+  return Array.isArray(body?.items) ? (body.items as SavedQuery[]) : [];
+}
+
+export async function createSavedQuery(input: {
+  name: string;
+  natural_language: string;
+  generated_sql: string;
+  description?: string;
+  tags?: string[];
+}): Promise<SavedQuery> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/saved-queries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (body?.detail?.error) msg = String(body.detail.error);
+      else if (body?.detail) msg = String(body.detail);
+    } catch {
+      /* keep the status line */
+    }
+    throw new ApiError(msg, res.status);
+  }
+  return (await res.json()) as SavedQuery;
+}
+
+export async function deleteSavedQuery(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/saved-queries/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new ApiError(`Could not delete the saved query (${res.status})`, res.status);
+  }
+}
+
+// ---- Query history ----------------------------------------------------------
+
+/** One history row (nixus/db/query_history_store.py → the /history payload). */
+export interface HistoryEntry {
+  id: number;
+  session_id: string;
+  question: string;
+  generated_sql: string;
+  status: string;
+  duration_ms: number | null;
+  row_count: number | null;
+  created_at: string;
+}
+
+/** One page of history, newest first (the API's fixed ordering). */
+export interface HistoryPage {
+  items: HistoryEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface HistoryFilters {
+  sessionId?: string;
+  status?: string | null;
+  since?: string | null; // ISO instant
+  until?: string | null;
+  limit?: number;
+  offset?: number;
+}
+
+/** Fetch one history page. Query params are serialized ONLY when set, so the
+ *  request stays minimal and the API's defaults apply. */
+export async function fetchQueryHistory(
+  filters: HistoryFilters = {},
+): Promise<HistoryPage> {
+  const params = new URLSearchParams();
+  if (filters.sessionId) params.set("session_id", filters.sessionId);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.since) params.set("since", filters.since);
+  if (filters.until) params.set("until", filters.until);
+  if (filters.limit != null) params.set("limit", String(filters.limit));
+  if (filters.offset != null) params.set("offset", String(filters.offset));
+  const qs = params.toString();
+  const res = await fetch(`${API_BASE_URL}/api/v1/history${qs ? `?${qs}` : ""}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    let msg = `Could not load history (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail?.error) msg = String(body.detail.error);
+    } catch {
+      /* keep the default message */
+    }
+    throw new ApiError(msg, res.status);
+  }
+  const body = (await res.json()) as HistoryPage;
+  return {
+    items: Array.isArray(body?.items) ? body.items : [],
+    total: typeof body?.total === "number" ? body.total : 0,
+    limit: typeof body?.limit === "number" ? body.limit : 50,
+    offset: typeof body?.offset === "number" ? body.offset : 0,
+  };
+}

@@ -1707,3 +1707,299 @@ td.num {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
+
+/* ===========================================================================
+   Phase 2 W1 — the persistent workspace: exports, saved queries, history.
+   Same ledger language: mono micro-labels, hairline rules, paper panels,
+   one oxblood accent. Nothing here is neon; states are honest.
+   =========================================================================== */
+
+/* --- Export controls (D1) — a compact button group on the Result head ------ */
+
+.export-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.export-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: 1.5px solid var(--ink);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.export-btn:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.export-btn:disabled {
+  cursor: default;
+  color: var(--ink-faint);
+  border-color: var(--rule-strong);
+  background: transparent;
+}
+
+/* The honest cap label — ochre (the strip/banner's "signal" tone), never alarm. */
+.export-capped {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--warn);
+}
+
+/* A rejected export (write rejected, query error, API down) — readable inline. */
+.export-error {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--accent-deep);
+}
+
+/* --- Saved queries panel (D2/D4) ------------------------------------------- */
+
+.saved-panel,
+.history-panel {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.saved-empty {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  border: 1px dashed var(--rule-strong);
+  background: var(--paper-raised);
+  padding: 18px 20px;
+}
+
+.saved-error {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-deep);
+  border: 1px solid var(--accent);
+  background: var(--accent-tint);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+/* The save form — a quiet framed row of inputs. */
+.saved-form {
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-raised);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.saved-form-row + .saved-form-row {
+  margin-top: 8px;
+}
+
+.saved-input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--paper-sunken);
+  border: 1px solid var(--rule-strong);
+  padding: 8px 10px;
+}
+
+.saved-input:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+.saved-input::placeholder {
+  color: var(--ink-faint);
+}
+
+.saved-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.saved-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: 1.5px solid var(--ink);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  flex: none;
+}
+
+.saved-btn:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.saved-btn:disabled {
+  cursor: default;
+  color: var(--ink-faint);
+  border-color: var(--rule-strong);
+  background: transparent;
+}
+
+.saved-btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.saved-btn-primary:hover:not(:disabled) {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+
+.saved-btn-danger:hover:not(:disabled) {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+  color: var(--paper);
+}
+
+.saved-list,
+.history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved-item,
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 4px;
+  border-top: 1px solid var(--rule);
+}
+
+.saved-item:first-child,
+.history-item:first-child {
+  border-top: none;
+}
+
+.saved-item-main,
+.history-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.saved-name {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.saved-question,
+.history-question {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.saved-tag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-sunken);
+  padding: 1px 7px;
+}
+
+.saved-lastrun,
+.history-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.saved-item-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+/* --- History panel (D3/D4) — filters + the run record ---------------------- */
+
+.history-filters {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.history-filter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 5px 8px;
+}
+
+.history-filter:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+.history-question {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Status chip — calm ledger badge; error states take the single sharp accent. */
+.history-status {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--rule-strong);
+  padding: 1px 7px;
+  color: var(--ink-soft);
+  background: var(--paper-sunken);
+}
+
+.history-status-answered { color: var(--ok); border-color: var(--ok); }
+.history-status-error,
+.history-status-refused_write {
+  color: var(--accent-deep);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+.history-status-needs_clarification,
+.history-status-refused_out_of_scope,
+.history-status-refused_ambiguous {
+  color: var(--warn);
+}

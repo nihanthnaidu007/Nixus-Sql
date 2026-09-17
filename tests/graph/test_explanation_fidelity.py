@@ -46,6 +46,7 @@ def check(text, row_count=2, rows=ROWS, question=""):
         # Correctly cited data values (money, decimals, string-rendered cells).
         ("The top artist earned $1,200, ahead of Y at $1,100.", 2, ROWS, ""),
         ("Tracks are priced at $0.99 each.", 2, [{"price": 0.99}], ""),
+        ("Tracks are priced at $0.99 each.", 2, [{"price": "0.9900"}], ""),
         ("The total came to $1,850.50 for the period.", 2, [{"total": 1850.50}], ""),
         ("The total came to 1,850 units across regions.", 2, [{"units": "1850"}], ""),
         # Derived figures (average/difference) are legitimately absent from rows.
@@ -64,6 +65,7 @@ def check(text, row_count=2, rows=ROWS, question=""):
         "exact-count", "exact-count-12", "one-row", "single-row-phrasing",
         "no-rows-empty", "zero-results", "top-n-selector", "first-n-selector",
         "grouped-count-claim", "cited-values", "cited-decimal",
+        "cited-decimal-trailing-zeros-string",
         "cited-float", "cited-string-cell", "derived-average", "derived-difference",
         "question-echo", "bare-integer-year", "bare-integer-rank",
         "empty-result-threshold",
@@ -90,11 +92,18 @@ def test_faithful_explanations_pass(text, row_count, rows, question):
         ("The top artist earned $1,850, ahead of Y.", 2, ROWS, "", "$1,850"),
         # Near-miss decimal — the classic off-by-digit hallucination.
         ("Tracks cost $1.90 each.", 2, [{"price": 1.99}], "", "$1.90"),
+        # Boundary over-match: the cited 0.99 must NOT pass because a cell
+        # holds 10.99 (same digits, larger number) — and $1.50 is not a match
+        # for a 21.50 cell either. A cited figure matches only its own number.
+        ("Tracks cost $0.99 each.", 2, [{"price": 10.99}], "", "$0.99"),
+        ("The fee was $1.50.", 2, [{"fee": 21.50}], "", "$1.50"),
         # Thousands-grouped value absent from the rows.
         ("Sales reached 9,500 units.", 2, [{"units": 950}], "", "9,500"),
     ],
     ids=["wrong-count", "wrong-count-12", "no-rows-but-2", "single-but-3",
-         "hallucinated-money", "near-miss-decimal", "grouped-value"],
+         "hallucinated-money", "near-miss-decimal",
+         "boundary-tail-0-99-vs-10-99", "boundary-mid-1-50-vs-21-50",
+         "grouped-value"],
 )
 def test_unfaithful_explanations_flag(text, row_count, rows, question, expected_in_problems):
     result = explanation_matches_result(text, rows, COLUMNS, row_count, question=question)

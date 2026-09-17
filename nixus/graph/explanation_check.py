@@ -240,6 +240,36 @@ def _cell_values(rows: list) -> tuple[set, set]:
     return numbers, strings
 
 
+# Numbers embedded in string cells ("$1,200", "12.34 USD"), extracted as
+# whole tokens so a cited figure can only ever match its own number — never
+# a larger one that merely contains the same digits ("0.99" vs "10.99").
+_CELL_NUMBER = re.compile(r"\$?\d[\d,]*(?:\.\d+)?")
+
+
+def _bounded_number_matches(cited_raw: str, cell: str) -> bool:
+    """True when the cited figure occurs in ``cell`` as a standalone number.
+
+    Boundary-aware replacement for plain substring containment, which passed
+    a cited ``0.99`` because a cell held ``10.99`` (same digits, wrong
+    boundary). Each side is normalized the same way the numeric-cell set is
+    (strip $/commas, 2-decimal money precision), which also equates
+    trailing-zero drift ("0.99" ↔ "0.9900"). A token that will not parse is
+    skipped — the caller's conservative fail-open rule then decides.
+    """
+    try:
+        cited = round(float(cited_raw), 2)
+    except ValueError:
+        return False
+    for match in _CELL_NUMBER.finditer(cell):
+        candidate = match.group(0).lstrip("$").replace(",", "")
+        try:
+            if round(float(candidate), 2) == cited:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _value_matches(token: str, numbers: set, strings: set) -> bool:
     raw = token.replace("$", "").replace(",", "").strip()
     try:
@@ -248,8 +278,11 @@ def _value_matches(token: str, numbers: set, strings: set) -> bool:
         return False
     if cited in numbers:
         return True
-    # Decimal drift: "1850" matches a cell rendered "1850.0"; "0.99" a "0.9900".
-    return any(raw in s or (s.rstrip("0").rstrip(".") == raw) for s in strings)
+    # String cells: match the cited figure only as a bounded number in the
+    # cell. Plain containment would let "0.99" pass because a cell holds
+    # "10.99"; the bounded comparison still equates decimal drift ("1850" vs
+    # a cell rendered "1850.0", "0.99" vs "0.9900") via 2-decimal rounding.
+    return any(_bounded_number_matches(raw, s) for s in strings)
 
 
 def explanation_matches_result(

@@ -102,8 +102,21 @@ this change are not in the new registry, so existing conversations start fresh.
 **The React UI** authenticates with the same key, inlined at build time via
 `NEXT_PUBLIC_API_KEY`; under `docker compose` it is wired from `API_KEY`
 automatically. A key served to a browser is readable by anyone who can load the UI —
-fine for a single-operator deployment, not a multi-user boundary. Rate limiting is
-deliberately **not** part of this change.
+fine for a single-operator deployment, not a multi-user boundary. What has
+shipped is **fail-closed API-key auth and server-issued sessions**. Rate
+limiting does **not** exist in the tree: it was deliberately deferred and is a
+documented future recommendation (see `docs/production-upgrade/`), not a
+shipped control.
+
+**The OpenAPI docs endpoints are unauthenticated.** `/docs`, `/redoc`, and
+`/openapi.json` sit outside the auth middleware (which guards only `/api`
+routes) and remain reachable without a key. That is an accepted tradeoff for
+a single-operator deployment: they expose only the route schema — no data, no
+keys, no query history — and anyone close enough to reach the API unattended
+is already inside the same trust boundary as the browser-served UI key. To
+close them anyway, disable them at the app level —
+`FastAPI(docs_url=None, redoc_url=None, openapi_url=None)` — in the existing
+`app = FastAPI(...)` call in `api/main.py`; no code change ships here.
 
 ### API quickstart (curl)
 
@@ -140,7 +153,7 @@ API keys and the bundled database's credentials** — no connection string, no e
 database. Clone to running is roughly fifteen minutes.
 
 ```bash
-git clone <repo-url> && cd Nexus-Sql-Agent
+git clone <repo-url> && cd Nixus-Sql
 cp .env.example .env          # then set the required variables in .env (list below)
 docker compose up -d --build  # provisions both DBs, seeds the demo data, migrates, embeds, boots API + web UI
 

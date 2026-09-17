@@ -481,7 +481,7 @@ async def _check_llm_connectivity() -> dict:
     """Check LLM API connectivity via token-free metadata calls.
 
     Results are cached for LLM_HEALTH_CACHE_TTL seconds so repeated
-    health probes (e.g. Streamlit's 30-second polling) do not burn tokens.
+    health probes (e.g. infrastructure polling) do not burn tokens.
 
     `anthropic.models.list()` and `openai.models.list()` are metadata-only
     endpoints — they do not invoke a model and have zero token cost.
@@ -542,7 +542,7 @@ async def health():
 
     DB connectivity: checked on every call (a single `SELECT 1`, ~1ms).
     LLM connectivity: checked at most once every LLM_HEALTH_CACHE_TTL seconds
-    using token-free metadata API calls. This prevents Streamlit's 30-second
+    using token-free metadata API calls. This prevents frequent health
     polling from burning Anthropic/OpenAI quota.
     """
     db_ok = await check_db_connection()

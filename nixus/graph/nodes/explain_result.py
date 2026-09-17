@@ -9,7 +9,11 @@ load_dotenv()
 
 from nixus.db.fewshot_store import store_fewshot_example
 from nixus.db.query_cache import store_cache_entry
-from nixus.graph.explanation_check import describe_result_plainly, is_overstated
+from nixus.graph.explanation_check import (
+    describe_result_plainly,
+    explanation_matches_result,
+    is_overstated,
+)
 from nixus.graph.state import SQLAgentState
 from nixus.utils.confidence import assess_confidence, level_to_score
 from nixus.utils.embeddings import embed_text
@@ -48,14 +52,17 @@ DO NOT:
 
 Describe the result accurately and richly — but claim nothing the rows cannot prove."""
 
-# Appended on the single regeneration when the first attempt editorialized. It
-# quotes the markers that fired so the model corrects the specific violation.
+# Appended on the single regeneration when the first attempt failed the
+# honesty backstops. It quotes what fired — overstatement triggers and
+# explanation-vs-result fidelity problems — so the model corrects the
+# specific violation.
 STRICT_SUFFIX = """
 
-IMPORTANT — your previous explanation editorialized: {triggers}. That is not
-allowed. Do not state causes, predictions, or recommendations, and do not infer
-real-world conclusions. Describe ONLY what the rows literally show: the values,
-the ranges, and the row count."""
+IMPORTANT — your previous explanation violated the rules: {problems}. That is
+not allowed. Do not state causes, predictions, or recommendations, and do not
+infer real-world conclusions. Do not state row counts or figures the result
+does not actually contain. Describe ONLY what the rows literally show: the
+values, the ranges, and the row count."""
 
 
 def now():
@@ -136,25 +143,44 @@ async def explain_result_node(state: SQLAgentState) -> SQLAgentState:
     response = await _call_llm(base_prompt)
     explanation = response.content.strip()
 
-    # Backstop (prompt 5.1): the prompt does the main work; here we catch any
-    # editorializing it let through. Detect world-claims, REGENERATE ONCE with a
-    # stricter instruction quoting the violation, then fall back to a strictly
-    # descriptive deterministic rendering. One retry max — latency stays bounded.
+    # Backstop (prompt 5.1 + M3 fidelity): the prompt does the main work; here
+    # we catch what it let through. Two deterministic checks run on every
+    # generation — overstatement (world-claims) and fidelity (row counts /
+    # cited values that don't match the executed result). On any failure,
+    # REGENERATE ONCE with a stricter instruction quoting the violations, then
+    # fall back to a strictly descriptive deterministic rendering. One retry
+    # max — latency stays bounded.
     verdict = is_overstated(explanation, state["user_query"])
-    if verdict.overstated:
-        triggers_str = ", ".join(sorted({phrase for _, phrase in verdict.triggers}))
+    fidelity = explanation_matches_result(
+        explanation, rows, result.get("columns", []), row_count, question=state["user_query"]
+    )
+
+    if verdict.overstated or not fidelity.consistent:
+        trigger_phrases = sorted({phrase for _, phrase in verdict.triggers})
+        parts = []
+        if trigger_phrases:
+            parts.append(f"editorializing: {', '.join(trigger_phrases)}")
+        if not fidelity.consistent:
+            parts.append("; ".join(fidelity.problems))
+        problems_str = " | ".join(parts)
         logger.info(
-            "Explanation overstated (triggers: %s) — regenerating once "
+            "Explanation failed the honesty backstop (%s) — regenerating once "
             "(session=%s)",
-            triggers_str, state.get("session_id", "unknown")[:8],
+            problems_str, state.get("session_id", "unknown")[:8],
         )
-        response = await _call_llm(base_prompt + STRICT_SUFFIX.format(triggers=triggers_str))
+        response = await _call_llm(base_prompt + STRICT_SUFFIX.format(problems=problems_str))
         explanation = response.content.strip()
 
-        if is_overstated(explanation, state["user_query"]).overstated:
+        still_bad = is_overstated(explanation, state["user_query"]).overstated or not (
+            explanation_matches_result(
+                explanation, rows, result.get("columns", []), row_count,
+                question=state["user_query"],
+            ).consistent
+        )
+        if still_bad:
             logger.info(
-                "Explanation still overstated after retry — using deterministic "
-                "description (session=%s)",
+                "Explanation still failed the backstop after retry — using "
+                "deterministic description (session=%s)",
                 state.get("session_id", "unknown")[:8],
             )
             explanation = describe_result_plainly(

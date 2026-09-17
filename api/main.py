@@ -471,7 +471,15 @@ async def _check_llm_connectivity() -> dict:
     endpoints — they do not invoke a model and have zero token cost.
     """
     now = time.monotonic()
-    if now - _llm_health_cache["checked_at"] < LLM_HEALTH_CACHE_TTL:
+    # Only short-circuit a cache that already holds probe results: status
+    # stays "unknown" until the first probe runs, and on a freshly booted
+    # machine (e.g. a fresh CI runner) time.monotonic() starts near zero, so
+    # the initial sparse cache could look fresh and return a dict without
+    # the per-provider keys.
+    if (
+        _llm_health_cache["status"] != "unknown"
+        and now - _llm_health_cache["checked_at"] < LLM_HEALTH_CACHE_TTL
+    ):
         return _llm_health_cache.copy()
 
     anthropic_ok = False

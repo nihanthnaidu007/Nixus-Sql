@@ -121,6 +121,26 @@ class Settings(BaseSettings):
     allowed_origins: str = Field(default="http://localhost:3000")
     llm_health_cache_ttl: int = Field(default=300)         # LLM_HEALTH_CACHE_TTL
 
+    # ── W3: semantic layer (curated metrics YAML) ──────────────────────────
+    # Path to the in-repo metrics YAML (curated NL question → verified SQL
+    # pairs). Relative to the process working directory; a missing or invalid
+    # file is logged and skipped — NEVER a startup failure (fail-soft doctrine).
+    semantic_metrics_path: str = Field(default="semantic/metrics.yaml")  # NIXUS_SEMANTIC_METRICS_PATH
+    # Seed metric questions into fewshot_examples at API startup (idempotent).
+    semantic_seed_on_startup: bool = Field(default=True)   # NIXUS_SEMANTIC_SEED_ON_STARTUP
+    # Length cap (chars) applied to dbt-manifest descriptions at ingestion —
+    # ingested text flows verbatim into the generator prompt (R3 injection
+    # surface), so the cap is part of the guardrail posture.
+    semantic_max_description_chars: int = Field(default=1500)  # NIXUS_SEMANTIC_MAX_DESCRIPTION_CHARS
+
+    # ── W3: dbt manifest connector ──────────────────────────────────────────
+    # Path to a dbt `target/manifest.json`. Unset (None) = the connector is off
+    # and embeddings come from catalog introspection alone. When set, model +
+    # column descriptions merge over COMMENT ON at embed time (manifest wins
+    # when non-empty); re-embed required to apply changes.
+    dbt_manifest_path: str | None = Field(default=None)    # NIXUS_DBT_MANIFEST_PATH
+
+
     # ── API authentication (X-API-Key) ──────────────────────────────────────
     # The shared key every /api client must send as the X-API-Key header (the
     # health probe is exempt). Unset or placeholder → the API FAILS CLOSED: it

@@ -281,6 +281,64 @@ For the full module map and the rules each layer obeys, see
 
 ---
 
+## Semantic layer, dbt enrichment, and the MCP server (W3)
+
+### Curated metrics — the semantic layer lite
+
+`semantic/metrics.yaml` is the single file where a team records their domain's
+curated metrics: a name, a description, natural-language questions it answers, the
+read-only SQL that computes it, and the tables it touches. The loader
+([`nixus/semantic/registry.py`](nixus/semantic/registry.py)) validates strictly
+(unknown fields, duplicate slugs, non-read-only SQL → hard errors) and fails SOFT at
+startup — a broken file is logged and skipped, never a crash.
+
+On boot, valid metrics are seeded into `fewshot_examples` (idempotent — exact-question
+check first) by [`nixus/semantic/seeding.py`](nixus/semantic/seeding.py), next to the
+existing few-shot startup hook. Metric names and descriptions are also appended — at
+EMBED time only — to the descriptions of the tables they reference
+([`nixus/semantic/enrichment.py`](nixus/semantic/enrichment.py)), so the schema text the
+generator retrieves carries the curated vocabulary. No graph changes; this is pure
+grounding.
+
+Configuration (see `.env.example`): `NIXUS_SEMANTIC_METRICS_PATH`,
+`NIXUS_SEMANTIC_SEED_ON_STARTUP`, `NIXUS_SEMANTIC_MAX_DESCRIPTION_CHARS`,
+`NIXUS_DBT_MANIFEST_PATH`. Resolved W3 settings are logged at startup.
+
+### dbt manifest connector
+
+Point `NIXUS_DBT_MANIFEST_PATH` at a dbt `target/manifest.json` and the embed pipeline
+([`nixus/schema/dbt.py`](nixus/schema/dbt.py)) merges model + column descriptions into
+the embedded schema. Precedence is locked: a NON-EMPTY manifest description wins over
+the catalog `COMMENT ON`; empty/absent falls through. `columns_json` records a
+`description_source` (`manifest` | `catalog`) per column so provenance is visible in
+API responses. Models whose `relation_name` matches no introspected table are logged,
+never guessed. The manifest's SHA-256 fingerprint is stored in `semantic_ingestions`
+(migration 0004) after a successful merge; re-embedding an unchanged manifest is a
+logged no-op, and the schema-drift report gains a manifest-staleness dimension (still
+report-don't-mutate — it advises, never auto-re-embeds).
+
+### MCP server (stdio only)
+
+`python -m nixus.mcp_server` speaks newline-delimited JSON-RPC 2.0 over stdin/stdout —
+no MCP SDK, no network surface. Methods: `initialize`, `tools/list`, `tools/call`
+(`ping`, notifications, and batch arrays are handled per spec; unknown methods return
+`-32601`).
+
+Two tools, reusing the exact execution paths the rest of the product uses (no third
+path):
+
+- `query` — the full graph ensemble via `query_service.run_query` (grounding, guardrails,
+  explanation, confidence).
+- `run_sql` — read-only gate + `export_service.execute_guarded`, the same primitive
+  `/run-sql` uses (statement timeout, row cap).
+
+Results are sanitized for the wire: `columns`, `rows`, `row_count`, `row_limit`,
+`capped`, `execution_time_ms`, `explanation`, `confidence`, `served_from_cache`;
+`Decimal`/`datetime` become strings and error payloads carry no internals. The
+checkpointer is created once at boot and closed on shutdown.
+
+---
+
 ## Health — and what the fields mean
 
 `GET /api/v1/health` (aliased at the unversioned `/api/health` for infra probes)

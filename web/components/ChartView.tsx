@@ -64,6 +64,10 @@ const SERIES = [
 
 const CHART_HEIGHT = 360;
 const MAX_CATEGORIES = 40; // keep bar/scatter layouts sane; note when truncated
+// W2 D1 — mirrors the backend's PIE_MAX_SLICES (settings.pie_max_slices): a pie
+// needs a small distribution. A user override can request a pie for a wide
+// result; the honest no-chart state beats a 40-slice wheel.
+const PIE_MAX_SLICES = 6;
 // Defensive ceiling on rendered series. The backend already caps the split at a
 // readable few (MULTI_SERIES_MAX), so this only guards against an unexpected payload —
 // it never silently drops series the backend deemed readable.
@@ -422,6 +426,17 @@ export function ChartView({
   ) : null;
 
   if (chart_type === "pie") {
+    // W2 D1 — a pie override on a wide result: the backend classifier already
+    // applies PIE_MAX_SLICES before choosing pie, but a user can request a pie
+    // for any shape. An honest no-chart beats a 40-slice wheel.
+    const distinct = new Set(data.map((r) => String(r[x_column]))).size;
+    if (distinct > PIE_MAX_SLICES) {
+      return (
+        <NoChart
+          reason={`A pie reads best with ${PIE_MAX_SLICES} slices or fewer — this result has ${distinct} categories. Try Bar.`}
+        />
+      );
+    }
     return (
       <div className="chart-frame">
         <ResponsiveContainer width="100%" height={CHART_HEIGHT}>

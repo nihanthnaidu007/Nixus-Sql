@@ -188,7 +188,19 @@ export interface NixusResponse {
   // tracing is enabled (api/main.py:290-327). Tracing is off by default, so this is null
   // in the common case — not dead plumbing. ResultView renders a trace link only when set.
   trace_url: string | null;
+  // Pre-execution EXPLAIN estimate from the guardrail_preview node (Wave 2 D2):
+  // {estimated_rows, plan_cost} when the plain EXPLAIN succeeded, null when it
+  // degraded silently or never ran (cache hit) — absence is honest, never faked.
+  guardrail_preview: GuardrailPreview | null;
   [key: string]: unknown;
+}
+
+/** Pre-execution planner estimate from the guardrail_preview node
+ *  (nixus/graph/nodes/guardrail_preview.py): what a PLAIN EXPLAIN (never
+ *  ANALYZE) said about the SQL BEFORE it executed. */
+export interface GuardrailPreview {
+  estimated_rows: number;
+  plan_cost: number;
 }
 
 /** One clarification turn: the question the server asked + the user's answer. */
@@ -254,6 +266,8 @@ export interface NormalizedResult {
                            // when tracing is enabled, null when tracing is off (default)
   // The backend's chart decision, carried through verbatim for ChartView to render.
   chartConfig: ChartConfig | null;
+  // The pre-execution EXPLAIN estimate (null when the preview degraded or never ran).
+  guardrailPreview: GuardrailPreview | null;
   // ---- Execution record (Phase 11): the STATIC end-state of the pipeline run ---
   // What the graph did, surfaced read-only for the node-status view, the self-
   // correction log, and the agent execution log. Emptiness is honest and common
@@ -738,6 +752,14 @@ export function normalize(raw: NixusResponse): NormalizedResult {
       typeof exec?.execution_time_ms === "number" ? exec.execution_time_ms : null,
     traceUrl: raw.trace_url ?? null,
     chartConfig: raw.chart_config ?? null,
+    // The EXPLAIN preview, validated to its shape — anything malformed degrades
+    // to null exactly as the backend's silent-degrade contract intends.
+    guardrailPreview:
+      raw.guardrail_preview &&
+      typeof raw.guardrail_preview.estimated_rows === "number" &&
+      typeof raw.guardrail_preview.plan_cost === "number"
+        ? raw.guardrail_preview
+        : null,
     // Execution record — kept honest to the real shape: lists default to [] (never
     // null), so the views can treat "no data" as the clean/empty case uniformly.
     completedNodes: Array.isArray(raw.completed_nodes)
@@ -811,6 +833,31 @@ export const fetchHealth = () => fetchStatus<HealthStatus>("/api/v1/health");
 export const fetchCacheStats = () => fetchStatus<CacheStats>("/api/v1/cache-stats");
 export const fetchFewshotStats = () =>
   fetchStatus<FewshotStats>("/api/v1/fewshot-stats");
+
+// ---- Phase 2 W2: guardrails manifest ----------------------------------------
+//
+// The guardrails as a VISIBLE surface. The endpoint is a static settings read
+// (zero DB access, zero tokens); it inherits the app's fail-closed auth, so
+// fetchStatus's null-on-!ok covers 401/503 the same way it does for health.
+
+/** GET /api/v1/guardrails — the enforced limits as the backend states them:
+ *  caps, budgets, timeouts, and enforcement posture. HONESTY CONTRACT: this
+ *  payload (and any UI built on it) reports caps and estimates ONLY — NIXUS
+ *  has no dollar/token spend ceiling, and copy must never imply one. */
+export interface GuardrailsManifest {
+  row_cap: number;
+  query_timeout_ms: number;
+  max_correction_attempts: number;
+  clarification_round_cap: number;
+  select_only: string;
+  read_only_role: string;
+  models: Record<string, string>;
+  auth: string;
+  note: string;
+}
+
+export const fetchGuardrails = () =>
+  fetchStatus<GuardrailsManifest>("/api/v1/guardrails");
 
 // ---- Phase 2 W1: exports, saved queries, query history ---------------------
 //

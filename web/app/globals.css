@@ -2003,3 +2003,73 @@ td.num {
 .history-status-refused_ambiguous {
   color: var(--warn);
 }
+
+/* ============================================================================
+   Phase 2 W2 — chart-type override picker + guardrails chips
+   ========================================================================== */
+
+/* The picker: the ViewToggle's quieter sibling — sits beside it in the Result
+   head, same ledger language at a smaller weight. */
+.chart-picker {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--rule-strong);
+}
+
+.chart-picker button {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  background: var(--paper-raised);
+  color: var(--ink-faint);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.chart-picker button + button {
+  border-left: 1px solid var(--rule-strong);
+}
+
+.chart-picker button:hover:not([aria-pressed="true"]) {
+  color: var(--accent);
+}
+
+.chart-picker button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* The guardrails strip: compact chips under the Result head — caps, timeout,
+   budgets, the planner estimate, and this run's warnings. Caps and estimates
+   ONLY: this copy must never imply a dollar/token spend ceiling. */
+.guard-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.guard-chip {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.guard-chip-preview {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.guard-chip-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}

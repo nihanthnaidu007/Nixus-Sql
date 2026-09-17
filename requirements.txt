@@ -26,6 +26,9 @@ pgvector==0.4.2
 sqlglot==30.8.0
 tenacity==9.1.4
 
+# semantic layer (W3): metrics YAML parsing
+PyYAML==6.0.3
+
 # data / viz
 plotly==6.7.0
 pandas==3.0.3

@@ -103,6 +103,32 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("Few-shot corpus seeding failed; continuing anyway")
 
+    # W3 metric seeding (idempotent, fail-soft): curated metric questions from
+    # semantic/metrics.yaml flow into the SAME fewshot_examples store, so they
+    # surface through regular few-shot retrieval with zero graph changes.
+    if settings.semantic_seed_on_startup:
+        try:
+            from nixus.semantic.seeding import seed_metrics_from_yaml
+            metric_stats = await seed_metrics_from_yaml()
+            logger.info(
+                "Metric seeding (%s): %d metric(s) loaded, %d exemplar(s) stored, "
+                "%d already present, %d failed",
+                metric_stats.path, metric_stats.metrics_loaded, metric_stats.stored,
+                metric_stats.skipped_existing, metric_stats.failed,
+            )
+        except Exception:
+            logger.exception("Metric seeding failed; continuing anyway")
+
+    # Resolved W3 settings — the `extra="ignore"` config silently drops a
+    # mistyped env var, so the effective semantic-layer knobs are logged at
+    # startup (same insurance pattern as the fail-closed API_KEY notice).
+    logger.info(
+        "W3 semantic settings: metrics_path=%r seed_on_startup=%s "
+        "max_description_chars=%d dbt_manifest_path=%r",
+        settings.semantic_metrics_path, settings.semantic_seed_on_startup,
+        settings.semantic_max_description_chars, settings.dbt_manifest_path,
+    )
+
     # Advisory schema-drift check: compare the live target structure to what is
     # embedded (via introspection) and log if they diverge. Non-fatal; never
     # auto-reembeds.

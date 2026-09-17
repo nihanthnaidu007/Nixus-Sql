@@ -1,0 +1,121 @@
+# NIXUS semantic-layer-lite — curated metrics (SaaS demo domain)
+#
+# WHAT THIS FILE IS
+#   Hand-curated business metrics: natural-language question(s), the VERIFIED
+#   SQL that answers them, and the tables that SQL reads. At API startup the
+#   questions are seeded into `fewshot_examples` (the regular few-shot
+#   retrieval path — zero graph changes), and at embed time each metric's
+#   name + description is merged into the schema description of every table
+#   it references.
+#
+# SCHEMA (strict — unknown fields are validation errors; invalid entries are
+# skipped with a logged reason, never a startup failure):
+#
+#   version: 1                      # optional; must be 1 when present
+#   metrics:                        # REQUIRED, non-empty list
+#     - name: <slug>                # ^[a-z][a-z0-9_]{0,63}$ , unique
+#       description: <text>         # non-empty; flows into schema embeddings
+#       questions:                  # non-empty list of NL phrasings
+#         - "..."
+#       sql: <SELECT statement>     # MUST pass the read-only gate (no writes,
+#                                   # no DDL, no multiple statements)
+#       tables:                     # non-empty list of table names the SQL
+#         - <table>                 # reads (bare or schema-qualified; matched
+#                                   # case-insensitively against the catalog)
+#
+# TESTING: every metric here is exercised by eval/test_metric_questions.py
+# (answer-shape checks on the SaaS demo schema). Keep this file and the eval
+# expectations in sync.
+
+version: 1
+
+metrics:
+  - name: monthly_recurring_revenue
+    description: >-
+      Monthly recurring revenue (MRR): the sum of monthly_price over ACTIVE
+      subscriptions joined to their plan. Canceled subscriptions stop
+      counting; no proration.
+    questions:
+      - "What is our monthly recurring revenue?"
+      - "What is our MRR?"
+      - "How much monthly recurring revenue do we have?"
+    sql: |
+      SELECT sum(p.monthly_price) AS mrr
+      FROM subscriptions s
+      JOIN plans p ON p.id = s.plan_id
+      WHERE s.status = 'active';
+    tables:
+      - subscriptions
+      - plans
+
+  - name: collected_payments_total
+    description: >-
+      Total money actually collected: the sum of every payment's amount.
+      Invoiced-but-unpaid money is NOT here (see open_invoice_total).
+    questions:
+      - "How much money have we collected in total?"
+      - "What is the total of all payments received?"
+      - "Show total collected payments."
+    sql: |
+      SELECT sum(amount) AS total_collected
+      FROM payments;
+    tables:
+      - payments
+
+  - name: open_invoice_total
+    description: >-
+      Money invoiced but not yet settled: the sum of amounts on invoices
+      whose status is 'open'.
+    questions:
+      - "How much money is owed to us in open invoices?"
+      - "What is the total value of open invoices?"
+    sql: |
+      SELECT sum(amount) AS open_total
+      FROM invoices
+      WHERE status = 'open';
+    tables:
+      - invoices
+
+  - name: churned_organizations
+    description: >-
+      Churned customers: the count of organizations flagged is_active =
+      false. Reactivated orgs count once (they are active again).
+    questions:
+      - "How many organizations have churned?"
+      - "How many customers are no longer active?"
+    sql: |
+      SELECT count(*) AS churned_orgs
+      FROM organizations
+      WHERE is_active = false;
+    tables:
+      - organizations
+
+  - name: usage_events_by_type
+    description: >-
+      Product-usage volume: the number of usage events per event_type,
+      heaviest first. One row per event; multiply by quantity for consumed
+      units.
+    questions:
+      - "Which event types do we see most in usage events?"
+      - "Break down usage events by type."
+    sql: |
+      SELECT event_type, count(*) AS event_count
+      FROM usage_events
+      GROUP BY event_type
+      ORDER BY event_count DESC;
+    tables:
+      - usage_events
+
+  - name: seats_by_subscription_status
+    description: >-
+      Committed seats: the total of the seats column across subscriptions,
+      broken out by subscription status.
+    questions:
+      - "How many seats do we have across subscriptions by status?"
+      - "Show total seats per subscription status."
+    sql: |
+      SELECT status, sum(seats) AS total_seats
+      FROM subscriptions
+      GROUP BY status;
+    tables:
+      - subscriptions

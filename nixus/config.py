@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     cache_max_age_days: int = Field(default=30)            # CACHE_MAX_AGE_DAYS
     cache_max_entries: int = Field(default=10000)          # CACHE_MAX_ENTRIES
 
+    # Seed fewshot_examples from the benchmark corpus at API startup when the
+    # store is empty (cold start). Disable with FEWSHOT_SEED_ON_STARTUP=false.
+    fewshot_seed_on_startup: bool = Field(default=True)    # FEWSHOT_SEED_ON_STARTUP
+
     # ── API: CORS + health ──────────────────────────────────────────────────
     # Old read a raw string and split on "," with strip + empty-filter applied
     # at the call site. Kept as a raw string here so the call site can apply the

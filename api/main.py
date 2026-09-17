@@ -79,6 +79,22 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Cache eviction on startup failed; continuing anyway")
 
+    # Cold-start few-shot seeding from the benchmark corpus (idempotent):
+    # a fresh install starts with an empty exemplar store; this fills it with
+    # the committed gold question↔SQL pairs. Never blocks startup — seeding
+    # failures are logged and skipped, never raised.
+    if settings.fewshot_seed_on_startup:
+        try:
+            from nixus.db.fewshot_seeding import seed_fewshots_from_corpus
+            seed_stats = await seed_fewshots_from_corpus()
+            logger.info(
+                "Few-shot seeding (%s): %d/%d stored, %d already present, %d failed",
+                seed_stats.source, seed_stats.stored, seed_stats.corpus_size,
+                seed_stats.skipped_existing, seed_stats.failed,
+            )
+        except Exception:
+            logger.exception("Few-shot corpus seeding failed; continuing anyway")
+
     # Advisory schema-drift check: compare the live target structure to what is
     # embedded (via introspection) and log if they diverge. Non-fatal; never
     # auto-reembeds.

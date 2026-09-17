@@ -1,42 +1,30 @@
-# Ruff configuration — Wave 1 (CI foundations).
+# Ruff configuration — Wave 2 trim.
 #
 # ruff 0.16.x's expanded default ruleset is the enforcement baseline; CI runs
 # `ruff check .` pinned to the same version as requirements-dev.txt (0.16.8).
 #
-# The ignore list below is deliberately temporary. The tree predates linting,
-# and its violations are concentrated in files owned by the in-flight Wave 0
-# security pass — fixing them here would collide with that diff. The relaxed
-# families are style/modernization rules (import order, typing upgrades,
-# micro-refactors); the HIGH-SIGNAL rules (pyflakes F, pycodestyle errors E,
-# bugbear B, bandit S) stay active. Trim these entries as the tree is
-# lint-cleaned.
+# Wave 1 temporarily relaxed several style families while the Wave 0 security
+# pass was still in flight. Those are RE-ENFORCED now: I, DTZ, C4, ISC, LOG,
+# UP, and FURB all pass clean on the merged tree, and the Wave 0 per-file
+# F401/F841/F541 residuals are gone (the per-file-ignores section was dropped).
 #
-# Deliberate keep-out: BLE001 (blind except) and S110 (try-except-pass) conflict
-# with this codebase's resilience pattern — broad except-with-fallback guards in
-# graph nodes, the API, and the eval probes. Narrowing those handlers changes
-# error semantics; a dedicated resilience pass may revisit.
+# What remains ignored is DELIBERATE, not temporary:
+#   * PLW/PLR/PERF/SIM/RUF — broad polish families whose findings are
+#     judgment calls (naming, complexity, micro-performance) rather than
+#     correctness; revisit per-family, not wholesale.
+#   * BLE001 (blind except) and S110 (try-except-pass) conflict with this
+#     codebase's resilience pattern — broad except-with-fallback guards in
+#     graph nodes, the API, and the eval probes. Narrowing those handlers
+#     changes error semantics; a dedicated resilience pass may revisit.
 
 [lint]
 ignore = [
-  "I",      # isort-style import ordering
-  "UP",     # pyupgrade modernizations (Optional[X], typing imports)
-  "DTZ",    # timezone-naive datetime constructors
-  "C4",     # flake8-comprehensions (dict(...) call style)
-  "ISC",    # implicit string concatenation
-  "FURB",   # refurb micro-refactors
   "PLW",    # pylint warnings (e.g. subprocess call without shell=False)
   "PLR",    # pylint refactors
   "PERF",   # perflint
-  "LOG",    # logging style
   "SIM",    # flake8-simplify
   "RUF",    # ruff-specific rules
   "BLE001", # blind except — deliberate resilience pattern (see header)
   "S110",   # try-except-pass — same resilience pattern (see header)
 ]
 
-[lint.per-file-ignores]
-# Residual violations in files owned by the in-flight Wave 0 pass — all
-# [*]-fixable leftovers that pass removes. Drop these entries when it lands.
-"eval/**" = ["F401", "F841"]
-"nixus/schema/introspect.py" = ["F541"]
-"tests/utils/test_credentials_and_tracing.py" = ["F401"]

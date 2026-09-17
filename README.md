@@ -105,25 +105,62 @@ automatically. A key served to a browser is readable by anyone who can load the 
 fine for a single-operator deployment, not a multi-user boundary. Rate limiting is
 deliberately **not** part of this change.
 
+### API quickstart (curl)
+
+With the stack up and `API_KEY` set, the flow is two steps — POST the question, read
+the answer. Sessions are **server-issued**: send an empty `session_id` on the first
+call, then echo back the id the response returns on every follow-up.
+
+```bash
+# 1. First call — session_id empty: the server issues one.
+curl -s -X POST http://localhost:8000/api/v1/run \
+     -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+     -d '{"user_query": "how many organizations are there?", "session_id": ""}'
+# → { ..., "session_id": "a1b2c3…", "explanation": "There are 4 organizations." }
+
+# 2. Follow-ups — echo the issued id to continue the same conversation
+#    (multi-turn memory and clarification round-trips ride on it).
+curl -s -X POST http://localhost:8000/api/v1/run \
+     -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+     -d '{"user_query": "and which of them has the most users?", "session_id": "a1b2c3…"}'
+```
+
+A `session_id` this server never issued answers **404** — send `""` to start fresh.
+The UI does this exchange automatically; `/api/v1/run-sql` executes user-edited SQL
+through the same session flow (SELECT-only, enforced server-side).
+
 ---
 
 ## Quick start — the self-contained demo
 
 The default `docker compose up` stands up everything: both databases, the read-only
 role, a **rich SaaS demo dataset** (loaded + seeded), the schema migrations, the schema
-embeddings, the API, and the React web UI. **The only thing you must provide is two API
-keys** — no connection string, no external database. Clone to running is roughly
-fifteen minutes.
+embeddings, the API, and the React web UI. **The only things you must provide are three
+API keys and the bundled database's credentials** — no connection string, no external
+database. Clone to running is roughly fifteen minutes.
 
 ```bash
 git clone <repo-url> && cd Nexus-Sql-Agent
-cp .env.example .env          # then set ANTHROPIC_API_KEY and OPENAI_API_KEY in .env
+cp .env.example .env          # then set the required variables in .env (list below)
 docker compose up -d --build  # provisions both DBs, seeds the demo data, migrates, embeds, boots API + web UI
 
 # once healthy — ask in the browser or from the CLI:
 open http://localhost:3000                       # the React web UI
 nixus query "which organization has the most users?"
+# or drive the API directly — see "API quickstart" below
 ```
+
+Required in `.env` before `docker compose up` — every one of these fails fast
+with a readable error instead of booting broken:
+
+- `ANTHROPIC_API_KEY` — the agent LLM (scope, SQL generation, explanations)
+- `OPENAI_API_KEY` — schema embeddings (text-embedding-3-small)
+- `API_KEY` — the API's own key; every client sends it as `X-API-Key`
+  (`openssl rand -hex 32`)
+- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_READONLY_PASSWORD` —
+  credentials for the bundled Postgres container. Compose **refuses to start**
+  without them (and refuses the retired demo values `nixus` /
+  `nixus_readonly`); choose real values, they stay local to this deployment.
 
 On first boot the API container runs, in strict idempotent order: wait for Postgres →
 apply migrations → ensure the sample data is loaded + seeded → check the API keys

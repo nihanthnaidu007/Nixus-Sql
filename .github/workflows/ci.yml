@@ -1,0 +1,60 @@
+# CI (Wave 0): lint + tests on every PR, plus a Docker build from a PRISTINE
+# export of the committed tree — the exact failure mode of a fresh clone
+# (the Dockerfile COPYs requirements.lock, which must therefore be in git).
+#
+# The tests job installs from requirements.lock (what the image installs) plus
+# the dev tools. Dummy DB URLs are set because nixus.db.connection raises at
+# import time without one; the engines are lazy so nothing actually connects.
+# The eval suite skips cleanly (eval/conftest.py probes infra once per session).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      STATE_DATABASE_URL: postgresql://nixus:nixus@localhost:5433/nixus_sql
+      TARGET_DATABASE_URL: postgresql://nixus_readonly:nixus_readonly@localhost:5433/nixus_saas
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install locked dependencies + dev tools
+        run: pip install -r requirements.lock -r requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Test suite (unit + eval-without-infra)
+        run: pytest
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export the committed tree and verify the lockfile is in git
+        run: |
+          rm -rf /tmp/pristine && mkdir -p /tmp/pristine
+          git archive --format=tar HEAD | tar -x -C /tmp/pristine
+          test -f /tmp/pristine/requirements.lock || {
+            echo "::error::requirements.lock is not committed — the Dockerfile COPY would fail on a fresh clone"
+            exit 1
+          }
+      - name: Build the API image from the pristine tree
+        run: docker build -t nixus-sql:ci /tmp/pristine
+
+  docker-build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export the committed tree
+        run: |
+          rm -rf /tmp/pristine && mkdir -p /tmp/pristine
+          git archive --format=tar HEAD | tar -x -C /tmp/pristine
+      # npm run build inside the image also type-checks the web client.
+      - name: Build the web image from the pristine tree
+        run: docker build -t nixus-web:ci /tmp/pristine/web

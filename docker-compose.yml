@@ -3,22 +3,45 @@ name: nixus-sql-agent
 services:
   db:
     image: pgvector/pgvector:pg16
+    # Credentials are REQUIRED from the environment — the retired demo values
+    # (nixus / nixus / nixus_readonly) are refused at startup, before Postgres
+    # initializes. Set them in `.env` (compose reads it automatically):
+    #   POSTGRES_USER               owner/superuser role name
+    #   POSTGRES_PASSWORD           owner password (URL-encode special chars)
+    #   POSTGRES_READONLY_PASSWORD  password for the read-only target role
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        if [ "$$POSTGRES_PASSWORD" = "nixus" ]; then
+          echo "✗ refusing to start: POSTGRES_PASSWORD is still the retired demo value 'nixus'" >&2
+          exit 1
+        fi
+        if [ "$$POSTGRES_READONLY_PASSWORD" = "nixus_readonly" ]; then
+          echo "✗ refusing to start: POSTGRES_READONLY_PASSWORD is still the retired demo value 'nixus_readonly'" >&2
+          exit 1
+        fi
+        exec docker-entrypoint.sh postgres
     environment:
-      POSTGRES_USER: nixus
-      POSTGRES_PASSWORD: nixus
-      POSTGRES_DB: nixus_sql
+      POSTGRES_USER: "${POSTGRES_USER:?set POSTGRES_USER in .env (demo credentials are retired)}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (demo credentials are retired)}"
+      POSTGRES_DB: ${POSTGRES_DB:-nixus_sql}
+      # Consumed by 05-init-readonly-role.sh — initdb .sql files cannot read env.
+      POSTGRES_READONLY_PASSWORD: "${POSTGRES_READONLY_PASSWORD:?set POSTGRES_READONLY_PASSWORD in .env (demo credentials are retired)}"
     ports:
       - "${DB_HOST_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # On first init, provision the read-only role (nixus_readonly) + the sample
-      # TARGET databases. `10` creates the role + nixus_chinook (alt demo); `20`
+      # On first init, provision the read-only role (nixus_readonly, created
+      # from env by `05`) + the sample TARGET databases. `10` creates the
+      # nixus_chinook (alt demo); `20`
       # creates the FROZEN benchmark target nixus_saas (loaded from the benchmark
       # seed); `30` creates the DEFAULT stack target nixus_saas_demo (the RICH,
       # time-spread demo data the UI draws compelling charts from). Both `20` and
       # `30` run on a fresh init — SEPARATE databases, SEPARATE seeds — so the
       # demo can NEVER perturb the benchmark.
       # Only applied on a fresh init: `docker compose down -v && docker compose up`.
+      - ./scripts/init-readonly-role.sh:/docker-entrypoint-initdb.d/05-init-readonly-role.sh:ro
       - ./scripts/init-target-db.sql:/docker-entrypoint-initdb.d/10-init-target-db.sql:ro
       - ./scripts/init-saas-db.sh:/docker-entrypoint-initdb.d/20-init-saas-db.sh:ro
       - ./scripts/init-demo-db.sh:/docker-entrypoint-initdb.d/30-init-demo-db.sh:ro
@@ -30,7 +53,7 @@ services:
       - ./eval/saas_seed.sql:/opt/nixus-saas/saas_seed.sql:ro
       - ./eval/saas_demo_seed.sql:/opt/nixus-saas/saas_demo_seed.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nixus -d nixus_sql"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -52,15 +75,15 @@ services:
       # + measures the FROZEN nixus_saas; only the stack's default target moved.
       #
       # state_db — NIXUS-owned bookkeeping, READ-WRITE (owner role `nixus`).
-      STATE_DATABASE_URL: postgresql://nixus:nixus@db:5432/nixus_sql
+      STATE_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nixus_sql}
       # target_db — the user's data, STRICTLY READ-ONLY (role `nixus_readonly`).
       # This is the ONLY handle the app has to the target. Default: nixus_saas_demo.
-      TARGET_DATABASE_URL: postgresql://nixus_readonly:nixus_readonly@db:5432/nixus_saas_demo
+      TARGET_DATABASE_URL: postgresql://nixus_readonly:${POSTGRES_READONLY_PASSWORD}@db:5432/nixus_saas_demo
       # Writable OWNER connection to the target — used ONLY by the one-time seed /
       # the idempotent demo ensure step, never by the app at runtime.
-      TARGET_ADMIN_DATABASE_URL: postgresql://nixus:nixus@db:5432/nixus_saas_demo
+      TARGET_ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/nixus_saas_demo
       # Legacy alias kept for back-compat (resolves to state).
-      DATABASE_URL: postgresql://nixus:nixus@db:5432/nixus_sql
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nixus_sql}
     ports:
       - "8000:8000"
     depends_on:

@@ -1,11 +1,37 @@
-# CI (Wave 0): lint + tests on every PR, plus a Docker build from a PRISTINE
-# export of the committed tree — the exact failure mode of a fresh clone
-# (the Dockerfile COPYs requirements.lock, which must therefore be in git).
+# CI — union of Wave 1 foundations and Wave 0's build gates, merged at dcd2ed6.
 #
-# The tests job installs from requirements.lock (what the image installs) plus
-# the dev tools. Dummy DB URLs are set because nixus.db.connection raises at
-# import time without one; the engines are lazy so nothing actually connects.
-# The eval suite skips cleanly (eval/conftest.py probes infra once per session).
+# Jobs:
+#   lint             — ruff check with the version pinned in requirements-dev.txt.
+#   tests            — the full offline suite, invoked with EXPLICIT paths
+#                      (`pytest tests/ eval/`), so collection never depends on
+#                      pytest.ini's testpaths; plus a pgvector service container
+#                      so the schema-introspection integration tests actually run
+#                      (they self-provision throwaway databases) instead of
+#                      silently skipping as they do without a live Postgres.
+#   docker-build     — Wave 0's pristine-checkout API image build, guarding the
+#                      exact fresh-clone failure mode: the Dockerfile COPYs
+#                      requirements.lock, which must therefore be in git.
+#   docker-build-web — Wave 0's pristine-checkout web image build; the npm build
+#                      inside the image also type-checks the web client.
+#
+# Environment contract (measured against the v3.0.0 tree):
+#   - OPENAI_API_KEY is required at import time (AsyncOpenAI is constructed when
+#     api.main / embeddings import); the sentinel value is the documented
+#     "not configured" shape (nixus.config.is_placeholder), so no provider is
+#     reported connected.
+#   - ANTHROPIC_API_KEY is deliberately UNSET: the live-LLM tests
+#     (tests/graph/test_scope.py, tests/api/test_clarification.py) skip without
+#     it via their _NEEDS_KEY guard.
+#   - The eval harness probes for a live API server and skips cleanly when
+#     absent, so including eval/ here costs nothing and keeps the benchmark
+#     harness honest about collecting.
+#   - STATE_DATABASE_URL / TARGET_DATABASE_URL point at the service container
+#     (disposable CI fixtures, NOT deployment defaults — deployment credentials
+#     are env-required in docker-compose.yml). Engines are lazy; tests that
+#     need a database connect to the service and self-provision throwaway DBs,
+#     everything else never connects.
+#   - The tests job installs from requirements.lock (what the API image installs,
+#     so CI validates the lock) plus requirements-dev.txt for ruff/pytest.
 name: CI
 
 on:
@@ -14,11 +40,39 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install ruff
+        # Pin matches requirements-dev.txt (ruff==0.16.8).
+        run: pip install ruff==0.16.8
+      - name: Lint (ruff)
+        run: ruff check .
+
   tests:
     runs-on: ubuntu-latest
     env:
+      OPENAI_API_KEY: your_openai_api_key_here
       STATE_DATABASE_URL: postgresql://nixus:nixus@localhost:5433/nixus_sql
       TARGET_DATABASE_URL: postgresql://nixus_readonly:nixus_readonly@localhost:5433/nixus_saas
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: nixus
+          POSTGRES_PASSWORD: nixus
+          POSTGRES_DB: nixus_sql
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U nixus -d nixus_sql"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,10 +81,8 @@ jobs:
           cache: pip
       - name: Install locked dependencies + dev tools
         run: pip install -r requirements.lock -r requirements-dev.txt
-      - name: Lint (ruff)
-        run: ruff check .
-      - name: Test suite (unit + eval-without-infra)
-        run: pytest
+      - name: Test suite (unit tests + eval harness, explicit paths)
+        run: pytest tests/ eval/
 
   docker-build:
     runs-on: ubuntu-latest

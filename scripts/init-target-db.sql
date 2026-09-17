@@ -29,8 +29,6 @@
 
 CREATE DATABASE nixus_chinook;
 
-CREATE ROLE nixus_readonly LOGIN PASSWORD 'nixus_readonly';
-
 GRANT CONNECT ON DATABASE nixus_chinook TO nixus_readonly;
 
 -- Switch into the target database to set schema-level privileges there.

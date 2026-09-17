@@ -34,16 +34,37 @@ fi
 HOSTPORT="$(grep -E '^TARGET_DATABASE_URL=' .env | head -1 | sed -E 's#.*@([^/]+)/.*#\1#')"
 [ -n "$HOSTPORT" ] || HOSTPORT="localhost:5433"
 
+# Credential parts come from the environment or .env — the retired demo
+# passwords (nixus / nixus_readonly) are refused by docker-compose at startup,
+# so the URLs this script writes must use the env-provided credentials too.
+# Passwords appear inside connection URLs: prefer URL-safe passwords, or
+# percent-encode special characters.
+env_val() {
+  local var="$1" val=""
+  val="$(printenv "$var")" || val=""
+  if [ -z "$val" ] && [ -f .env ]; then
+    val="$(grep -E "^${var}=" .env | tail -1 | cut -d= -f2-)"
+  fi
+  printf '%s' "$val"
+}
+PG_USER="$(env_val POSTGRES_USER)"
+PG_PASS="$(env_val POSTGRES_PASSWORD)"
+RO_PASS="$(env_val POSTGRES_READONLY_PASSWORD)"
+[ -n "$PG_USER" ] && [ -n "$PG_PASS" ] && [ -n "$RO_PASS" ] || {
+  echo "✗ POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_READONLY_PASSWORD must be set (environment or .env) — the demo credentials are retired."
+  exit 1
+}
+
 case "$NAME" in
   demo)
-    RO="postgresql://nixus_readonly:nixus_readonly@${HOSTPORT}/nixus_saas_demo"
-    ADMIN="postgresql://nixus:nixus@${HOSTPORT}/nixus_saas_demo" ;;
+    RO="postgresql://nixus_readonly:${RO_PASS}@${HOSTPORT}/nixus_saas_demo"
+    ADMIN="postgresql://${PG_USER}:${PG_PASS}@${HOSTPORT}/nixus_saas_demo" ;;
   saas)
-    RO="postgresql://nixus_readonly:nixus_readonly@${HOSTPORT}/nixus_saas"
-    ADMIN="postgresql://nixus:nixus@${HOSTPORT}/nixus_saas" ;;
+    RO="postgresql://nixus_readonly:${RO_PASS}@${HOSTPORT}/nixus_saas"
+    ADMIN="postgresql://${PG_USER}:${PG_PASS}@${HOSTPORT}/nixus_saas" ;;
   chinook)
-    RO="postgresql://nixus_readonly:nixus_readonly@${HOSTPORT}/nixus_chinook"
-    ADMIN="postgresql://nixus:nixus@${HOSTPORT}/nixus_chinook" ;;
+    RO="postgresql://nixus_readonly:${RO_PASS}@${HOSTPORT}/nixus_chinook"
+    ADMIN="postgresql://${PG_USER}:${PG_PASS}@${HOSTPORT}/nixus_chinook" ;;
   postgresql://*|postgres://*)
     RO="$NAME"; ADMIN="" ;;   # bring-your-own read-only target: no owner, no rebuild
   *)

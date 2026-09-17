@@ -1,0 +1,73 @@
+# Wave 1 — CI foundations: ruff lint + the full offline test suite on every PR.
+#
+# The suite is invoked with EXPLICIT paths (`pytest tests/ eval/`), never a bare
+# `pytest`: pytest.ini sets `testpaths = eval`, so a bare run would collect only
+# the eval harness and skip the unit suite entirely — a vacuous green. Explicit
+# paths make collection independent of pytest.ini.
+#
+# Environment contract (measured against the v3.0.0 tree):
+#   - OPENAI_API_KEY is required at import time (AsyncOpenAI is constructed when
+#     api.main / embeddings import); the sentinel value is the documented
+#     "not configured" shape (nixus.config.is_placeholder), so no provider is
+#     reported connected.
+#   - ANTHROPIC_API_KEY is deliberately UNSET: the live-LLM tests
+#     (tests/graph/test_scope.py, tests/api/test_clarification.py) skip without
+#     it via their _NEEDS_KEY guard.
+#   - The eval harness probes for a live API server and skips cleanly when
+#     absent (88 skips), so including eval/ here costs nothing and keeps the
+#     benchmark harness honest about collecting.
+#   - tests/schema/test_introspect.py provisions throwaway databases through a
+#     real admin connection, so the tests job runs a Postgres service container.
+#     The service credentials are disposable CI fixtures, NOT deployment defaults
+#     — deployment credentials are env-required in docker-compose.yml.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install ruff
+        # Pin matches requirements-dev.txt (ruff==0.16.8).
+        run: pip install ruff==0.16.8
+      - name: Lint (ruff)
+        run: ruff check .
+
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: your_openai_api_key_here
+      STATE_DATABASE_URL: postgresql://nixus:nixus@localhost:5433/nixus_sql
+      TARGET_DATABASE_URL: postgresql://nixus_readonly:nixus_readonly@localhost:5433/nixus_saas
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: nixus
+          POSTGRES_PASSWORD: nixus
+          POSTGRES_DB: nixus_sql
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U nixus -d nixus_sql"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Test suite (unit tests + eval harness, explicit paths)
+        run: pytest tests/ eval/

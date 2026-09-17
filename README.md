@@ -74,6 +74,39 @@ layout, a separate rich demo dataset, and neutral empty states.
 
 ---
 
+## API authentication & sessions
+
+Every `/api` route requires an **API key**, sent as the `X-API-Key` header. The only
+exemption is `/api/health`, which stays open for infrastructure probes (load
+balancers, uptime checks, container healthchecks). The key comes from the `API_KEY`
+environment variable — generate one with `openssl rand -hex 32`:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/run \
+     -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+     -d '{"user_query": "how many organizations are there?"}'
+```
+
+**Fail-closed by design.** If `API_KEY` is unset — or still the `.env.example`
+placeholder — the API refuses to serve: every protected route answers **503** with
+setup guidance and startup logs a loud error. It never silently opens.
+
+**Sessions are server-issued.** The session id doubles as the LangGraph checkpoint
+thread id, so clients can no longer supply their own: send an **empty** `session_id`
+on a first query and the response carries the server-issued id to reuse for
+follow-ups (the React UI already does exactly this). A `session_id` this server
+never issued is answered with **404** — one client cannot attach itself to another
+session's checkpoint thread. Upgrading from an earlier version: ids issued before
+this change are not in the new registry, so existing conversations start fresh.
+
+**The React UI** authenticates with the same key, inlined at build time via
+`NEXT_PUBLIC_API_KEY`; under `docker compose` it is wired from `API_KEY`
+automatically. A key served to a browser is readable by anyone who can load the UI —
+fine for a single-operator deployment, not a multi-user boundary. Rate limiting is
+deliberately **not** part of this change.
+
+---
+
 ## Quick start — the self-contained demo
 
 The default `docker compose up` stands up everything: both databases, the read-only

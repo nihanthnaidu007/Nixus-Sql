@@ -33,13 +33,23 @@ _ADMIN_URL = make_url(settings.state_url) if settings.state_url else None
 
 
 def _pg_kwargs(database: str) -> dict:
-    return dict(
-        host=_ADMIN_URL.host,
-        port=_ADMIN_URL.port,
-        user=_ADMIN_URL.username,
-        password=_ADMIN_URL.password,
-        database=database,
-    )
+    return {
+        "host": _ADMIN_URL.host,
+        "port": _ADMIN_URL.port,
+        "user": _ADMIN_URL.username,
+        "password": _ADMIN_URL.password,
+        "database": database,
+    }
+
+
+async def _postgres_reachable() -> bool:
+    """True iff the admin connection (CREATE DATABASE rights) can be established."""
+    try:
+        admin = await asyncpg.connect(**_pg_kwargs("postgres"))
+        await admin.close()
+        return True
+    except (OSError, asyncpg.PostgresError):
+        return False
 
 
 async def _drop_db() -> None:
@@ -88,6 +98,8 @@ async def _provision_and_introspect() -> IntrospectedSchema:
 def introspected() -> IntrospectedSchema:
     if _ADMIN_URL is None:
         pytest.skip("STATE_DATABASE_URL not set — cannot provision throwaway db.")
+    if not asyncio.run(_postgres_reachable()):
+        pytest.skip("Postgres not reachable — introspection tests need a live database.")
     return asyncio.run(_provision_and_introspect())
 
 

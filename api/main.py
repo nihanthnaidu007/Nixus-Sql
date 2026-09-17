@@ -1,29 +1,40 @@
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from nixus.config import settings, is_placeholder
-import uuid
 import asyncio
 import json
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from nixus.graph.graph import build_graph, init_checkpointer, aclose_checkpointer
-from nixus.graph.state import SQLAgentState
+from api.auth import APIKeyMiddleware, configured_api_key
+from api.sessions import UnknownSessionError, resolve_session_id
+from nixus.config import is_placeholder, settings
 from nixus.db.connection import check_db_connection, get_state_engine, get_target_engine
-from nixus.db.query_cache import get_cache_stats, evict_stale_cache_entries
 from nixus.db.fewshot_store import get_fewshot_stats
-from nixus.utils.langsmith_config import get_run_config, get_trace_url, is_tracing_enabled
+from nixus.db.query_cache import evict_stale_cache_entries, get_cache_stats
+from nixus.graph.graph import aclose_checkpointer, build_graph, init_checkpointer
+from nixus.graph.state import SQLAgentState
+from nixus.services.query_service import get_thread_config, run_query
+from nixus.utils.langsmith_config import (
+    get_run_config,
+    get_trace_url,
+    is_tracing_enabled,
+)
+from nixus.utils.logging_config import (
+    log_node_event,
+    log_query_complete,
+    log_query_start,
+)
 from nixus.utils.sql_safety import is_read_only_sql
-from nixus.utils.logging_config import log_query_start, log_query_complete, log_node_event
-from nixus.services.query_service import run_query, get_thread_config
-from api.context import RequestContext
 
 logger = logging.getLogger("nixus_sql.api")
 
@@ -37,6 +48,15 @@ async def lifespan(app: FastAPI):
     run, and evicts stale `query_cache` entries.
     """
     from nixus.db.schema_init import init_database
+
+    # Fail-closed notice: with no real API key the auth middleware 503s every
+    # protected route. Loud at startup so an operator never has to guess why.
+    if configured_api_key() is None:
+        logger.error(
+            "API_KEY is not configured — the API is FAIL-CLOSED: every /api route "
+            "except /api/health will answer 503 until a key is set. See README, "
+            "section 'API authentication & sessions'."
+        )
 
     try:
         await asyncio.to_thread(init_database)
@@ -81,12 +101,17 @@ app = FastAPI(title="NIXUS SQL API", version="3.0.0", lifespan=lifespan)
 _raw_origins = settings.allowed_origins
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
+# API-key auth FIRST, then CORS: add_middleware prepends, so CORS ends up the
+# OUTERMOST layer and answers browser preflights (OPTIONS) itself — the auth
+# middleware only ever sees real requests, which carry the X-API-Key header.
+app.add_middleware(APIKeyMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
 
 # All endpoints are served under the versioned /api/v1 prefix (stable contract
@@ -112,7 +137,9 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(
         f"[{trace_id}] Unhandled exception on {request.method} {request.url.path}: "
         f"{type(exc).__name__}: {exc}",
-        exc_info=True,
+        # This function IS the exception handler (FastAPI passes the active
+        # exception in) — hand it over explicitly for the traceback.
+        exc_info=exc,
     )
     return JSONResponse(
         status_code=500,
@@ -120,6 +147,27 @@ async def global_exception_handler(request: Request, exc: Exception):
             "error": "An unexpected error occurred.",
             "trace_id": trace_id,
             "type": type(exc).__name__,
+        },
+    )
+
+
+@app.exception_handler(UnknownSessionError)
+async def unknown_session_handler(request: Request, exc: UnknownSessionError):
+    """404 for a client-supplied session_id this server never issued.
+
+    Session ids double as LangGraph checkpoint thread ids, so only server-issued
+    ids may reach them. The recovery path is in the body: start a session by
+    sending an empty session_id, then reuse the id the response returns.
+    """
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Unknown session.",
+            "detail": (
+                "session_id was not issued by this server. Send an empty "
+                "session_id to start a new session; the response includes the "
+                "id to reuse for follow-ups."
+            ),
         },
     )
 
@@ -158,14 +206,13 @@ class StreamRequest(BaseModel):
 
 @router.post("/run")
 async def run_agent(req: RunRequest):
-    # HTTP shell: build the per-request context (carries session identity), then
-    # delegate the graph run to the framework-agnostic service. The core boundary
-    # receives plain values (session_id + clarification round-trip), never the
-    # request/context types.
-    ctx = RequestContext.for_session(req.session_id)
+    # HTTP shell: resolve session identity (issue-or-bind), then delegate the
+    # graph run to the framework-agnostic service. The core boundary receives
+    # plain values (session_id + clarification round-trip), never request types.
+    session_id = await resolve_session_id(req.session_id)
     return await run_query(
         req.user_query,
-        ctx.session_id,
+        session_id,
         clarification_context=req.clarification_context.model_dump() if req.clarification_context else None,
         clarification_round=req.clarification_round,
     )
@@ -178,7 +225,7 @@ async def stream_agent(req: StreamRequest):
     Each event is a JSON-encoded partial state update.
     Final event has is_complete=True with full result and trace_url.
     """
-    session_id = RequestContext.for_session(req.session_id).session_id
+    session_id = await resolve_session_id(req.session_id)
 
     initial_state = {
         "user_query": req.user_query,
@@ -357,6 +404,8 @@ async def run_edited_sql(req: RunSQLRequest):
     permitted. Any INSERT/UPDATE/DELETE/DROP/CREATE/ALTER/TRUNCATE/COMMAND
     is rejected at the API boundary, regardless of caller (UI or curl).
     """
+    session_id = await resolve_session_id(req.session_id)
+
     is_safe, reason = is_read_only_sql(req.sql)
     if not is_safe:
         return JSONResponse(
@@ -367,13 +416,13 @@ async def run_edited_sql(req: RunSQLRequest):
             },
         )
 
-    from nixus.graph.nodes.validate_syntax import validate_syntax_node
-    from nixus.graph.nodes.execute_query import execute_query_node
     from nixus.graph.nodes.check_result import check_result_node
     from nixus.graph.nodes.classify_chart import classify_chart_node
+    from nixus.graph.nodes.execute_query import execute_query_node
+    from nixus.graph.nodes.validate_syntax import validate_syntax_node
 
     mini_state = SQLAgentState(
-        user_query="[user-edited SQL]", session_id=RequestContext.for_session(req.session_id).session_id,
+        user_query="[user-edited SQL]", session_id=session_id,
         clarification_context=None, clarification_round=0,
         scope_category="IN_SCOPE", scope_message=None,
         outcome="ANSWERED", clarifying_question=None, reason=None,

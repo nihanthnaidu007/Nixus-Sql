@@ -16,14 +16,13 @@ Questions use the SaaS schema (the benchmark of record's target).
 """
 
 import time
-import uuid
 
 import httpx
+import pytest
 from sqlalchemy import text
 
-from eval.conftest import BASE_URL, record_metric
+from eval.conftest import BASE_URL, auth_headers, record_metric
 from nixus.db.connection import sync_engine
-
 
 N_MISS_SAMPLES = 5
 N_HIT_SAMPLES = 10
@@ -82,15 +81,17 @@ def _timed_run(client: httpx.Client, question: str) -> tuple[float, dict]:
     t0 = time.monotonic()
     resp = client.post(
         "/api/v1/run",
-        json={"user_query": question, "session_id": str(uuid.uuid4())},
+        json={"user_query": question, "session_id": ""},
     )
     ms = (time.monotonic() - t0) * 1000
     resp.raise_for_status()
     return ms, resp.json()
 
 
-def test_cache_miss_latency_reported():
+def test_cache_miss_latency_reported(infra_status):
     """Measure + record cache-miss latency. No latency gate (reported metric)."""
+    if not infra_status.api_ok:
+        pytest.skip(f"API not reachable at {BASE_URL}.")
     removed = _evict_latency_cache_entries()
     print(f"\nEvicted {removed} prior cache entries before cache-miss measurement.")
 
@@ -98,7 +99,7 @@ def test_cache_miss_latency_reported():
     latencies: list[float] = []
     served_from_cache = 0
     timeouts = 0
-    with httpx.Client(base_url=BASE_URL, timeout=LATENCY_CLIENT_TIMEOUT) as client:
+    with httpx.Client(base_url=BASE_URL, timeout=LATENCY_CLIENT_TIMEOUT, headers=auth_headers()) as client:
         for q in questions:
             try:
                 ms, state = _timed_run(client, q)

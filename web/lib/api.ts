@@ -37,6 +37,18 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// The API authenticates every /api route with an X-API-Key header (api/auth.py).
+// NEXT_PUBLIC_* is inlined at BUILD time, so the key must be supplied as a build
+// ARG (web/Dockerfile + compose build.args). When unset the header is simply
+// omitted — requests will 401 against a secured API, which is the honest
+// failure (the key exists server-side only when the operator configured one).
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
+
+/** Headers the API requires on every request (X-API-Key only when configured). */
+function authHeaders(): Record<string, string> {
+  return API_KEY ? { "X-API-Key": API_KEY } : {};
+}
+
 // ---- The detected response shapes (subset 8.1 renders; full state is larger) ----
 
 /** Live SQL execution result. NULL when the answer was served from cache. */
@@ -293,7 +305,7 @@ export async function runQuery(
   try {
     res = await fetch(`${API_BASE_URL}/api/v1/run`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body),
     });
   } catch (e) {
@@ -361,7 +373,7 @@ export async function runEditedSql(
   try {
     res = await fetch(`${API_BASE_URL}/api/v1/run-sql`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ sql, session_id: sessionId }),
     });
   } catch (e) {
@@ -501,6 +513,7 @@ export async function runQueryStreaming(
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
+        ...authHeaders(),
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -783,7 +796,10 @@ export interface FewshotStats {
  *  status line treats null as "unavailable" — an honest absence, not a crash. */
 async function fetchStatus<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}${path}`, { method: "GET" });
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "GET",
+      headers: authHeaders(),
+    });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {

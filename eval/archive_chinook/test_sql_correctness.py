@@ -20,12 +20,13 @@ Non-negotiable bar: ≥ 24 / 30 tests must pass (80% sql_correctness_rate).
 """
 
 import pytest
+
 from eval.archive_chinook.gold_queries import GOLD_QUERIES
 from eval.conftest import (
-    run_query,
-    run_gold_sql,
     extract_rows,
     result_overlap_rate,
+    run_gold_sql,
+    run_query,
 )
 
 OVERLAP_THRESHOLD = 0.70

@@ -11,7 +11,6 @@ import pytest
 
 from nixus.graph.grounding import SchemaView, check_grounding
 
-
 # Same tables, two key casings — must behave identically after normalization.
 CAP = SchemaView(tables={"Track": {"TrackId", "Name", "AlbumId"},
                          "Album": {"AlbumId", "Title"}})

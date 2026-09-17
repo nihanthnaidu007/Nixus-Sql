@@ -18,13 +18,13 @@ PASS (the governing rule — never reject valid SQL on our own uncertainty).
 from datetime import datetime
 
 from nixus.db.connection import get_target_engine
-from nixus.schema.introspect import introspect_schema
 from nixus.graph.grounding import (
     SchemaView,
     check_grounding,
     schema_view_from_introspection,
 )
 from nixus.graph.state import SQLAgentState
+from nixus.schema.introspect import introspect_schema
 
 # The target schema is stable for the life of the process (re-embedding/drift are
 # handled out of band), so introspect once and reuse — avoids a catalog round-trip
@@ -33,7 +33,7 @@ _schema_view_cache: SchemaView | None = None
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def _get_schema_view() -> SchemaView:

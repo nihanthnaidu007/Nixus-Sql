@@ -1,7 +1,7 @@
-from nixus.config import settings
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
+from nixus.config import settings
 from nixus.utils.retry import embedding_retry
 
 load_dotenv()

@@ -13,15 +13,15 @@ import os
 
 import pytest
 
+from nixus.config import is_placeholder
 from nixus.graph.scope import (
     ScopeCategory,
-    regex_prefilter,
-    detect_write_request,
-    classify_scope,
-    result_from_llm,
     build_classifier_prompt,
+    classify_scope,
+    detect_write_request,
+    regex_prefilter,
+    result_from_llm,
 )
-
 
 # Real questions about the data — the false-positive guard. NEVER OUT_OF_SCOPE.
 MUST_ACCEPT = [
@@ -148,8 +148,8 @@ def test_prompt_embeds_query_and_schema():
 
 # ── LLM-backed behaviour (requires an API key; skipped otherwise) ────────────
 _NEEDS_KEY = pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"),
-    reason="needs ANTHROPIC_API_KEY for live classification",
+    is_placeholder(os.getenv("ANTHROPIC_API_KEY")),
+    reason="needs a REAL ANTHROPIC_API_KEY for live classification",
 )
 _SCHEMA = (
     "Tables available: Artist, Album, Track, Genre, Customer, Invoice, "

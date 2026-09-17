@@ -1,5 +1,7 @@
 import json
+
 from sqlalchemy import text
+
 # query_cache is NIXUS-owned bookkeeping → STATE database (read + write).
 from nixus.db.connection import state_engine
 

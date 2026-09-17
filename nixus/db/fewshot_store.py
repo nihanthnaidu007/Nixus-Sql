@@ -1,4 +1,5 @@
 from sqlalchemy import text
+
 # fewshot_examples is NIXUS-owned bookkeeping (read + LEARN) → STATE database.
 from nixus.db.connection import state_engine
 

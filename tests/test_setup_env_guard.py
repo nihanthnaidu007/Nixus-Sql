@@ -29,7 +29,7 @@ def test_existing_env_is_not_overwritten(tmp_path):
 
     guard = 'if [ -f .env ]; then echo keep; else cp .env.example .env; fi'
     out = subprocess.run(
-        ["bash", "-c", guard], cwd=tmp_path, capture_output=True, text=True
+        ["bash", "-c", guard], cwd=tmp_path, capture_output=True, text=True, check=False
     )
     assert out.returncode == 0
     assert out.stdout.strip() == "keep"

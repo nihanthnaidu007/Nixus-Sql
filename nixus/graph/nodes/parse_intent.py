@@ -1,11 +1,14 @@
-from nixus.config import settings
-from dotenv import load_dotenv
 from datetime import datetime
+
+from dotenv import load_dotenv
+
+from nixus.config import settings
 
 load_dotenv()
 
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
+
 from nixus.graph.state import SQLAgentState
 from nixus.utils.retry import llm_retry
 
@@ -45,7 +48,7 @@ Respond ONLY with valid JSON matching this schema. No markdown, no backticks:
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def parse_intent_node(state: SQLAgentState) -> SQLAgentState:

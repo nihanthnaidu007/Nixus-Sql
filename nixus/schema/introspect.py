@@ -95,7 +95,7 @@ _PK_SQL = _q(f"""
 # columns pair positionally — the critical bit for composite FKs. Scope is FKs
 # whose FROM table is in a user schema; the TO schema is captured as-is (so a
 # cross-schema FK keeps the correct to_schema).
-_FK_SQL = _q(f"""
+_FK_SQL = _q("""
     SELECT con.oid AS constraint_oid,
            con.conname AS constraint_name,
            fn.nspname AS from_schema,

@@ -14,6 +14,12 @@ RUN npm ci
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# The API authenticates /api routes with X-API-Key. The browser cannot read the
+# server's API_KEY, so the operator passes the same value as a build ARG (compose
+# wires it from .env). Unset → no header is sent (requests will 401 — fail-closed).
+ARG NEXT_PUBLIC_API_KEY=""
+ENV NEXT_PUBLIC_API_KEY=${NEXT_PUBLIC_API_KEY}
+
 COPY . .
 RUN npm run build
 

@@ -1,7 +1,6 @@
 import sqlglot
 from sqlglot import exp
 
-
 BLOCKED_STATEMENT_TYPES = (
     exp.Insert,
     exp.Update,
@@ -27,7 +26,7 @@ def is_read_only_sql(sql: str) -> tuple[bool, str]:
     try:
         statements = sqlglot.parse(sql, dialect="postgres")
     except Exception as e:
-        return False, f"SQL parse error: {str(e)}"
+        return False, f"SQL parse error: {e!s}"
 
     if not statements:
         return False, "No valid SQL statement found."

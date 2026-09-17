@@ -13,10 +13,9 @@ The MUST-FLAG set proves the backstop still catches blatant world-claims
 import pytest
 
 from nixus.graph.explanation_check import (
-    is_overstated,
     describe_result_plainly,
+    is_overstated,
 )
-
 
 # Editorializing — claims about the WORLD the rows cannot prove. Each MUST flag.
 MUST_FLAG = [

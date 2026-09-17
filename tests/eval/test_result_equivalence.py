@@ -83,7 +83,8 @@ def test_average_rounds_to_match():
 
 def test_timestamp_datetime_vs_iso_string():
     # gold returns datetime (date_trunc), API returns an ISO string.
-    gold = [(datetime(2024, 1, 1), 31), (datetime(2024, 2, 1), 29)]
+    # Naive by contract: _parse_isoish keeps both sides naive (see result_equivalence).
+    gold = [(datetime(2024, 1, 1), 31), (datetime(2024, 2, 1), 29)]  # noqa: DTZ001
     gen = [("2024-01-01T00:00:00", 31), ("2024-02-01 00:00:00", 29)]
     assert results_equivalent(gen, gold, ordered=True).equivalent
 

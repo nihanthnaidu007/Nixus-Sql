@@ -1,14 +1,15 @@
-from nixus.config import settings
 from datetime import datetime
+
+from nixus.config import settings
 from nixus.db.schema_store import search_schemas
-from nixus.utils.embeddings import embed_text
 from nixus.graph.state import SQLAgentState
+from nixus.utils.embeddings import embed_text
 
 SCHEMA_TOP_K = settings.schema_retrieval_top_k
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def retrieve_schema_node(state: SQLAgentState) -> SQLAgentState:

@@ -32,7 +32,6 @@ import pytest
 
 from nixus.graph.grounding import SchemaView, check_grounding
 
-
 VIEW = SchemaView(tables={
     "Track":   {"TrackId", "Name", "AlbumId", "Milliseconds", "UnitPrice"},
     "Album":   {"AlbumId", "Title", "ArtistId"},
@@ -60,8 +59,8 @@ VALID_CASES = [
     ("join_using",
      'SELECT "Title" FROM "Track" JOIN "Album" USING ("AlbumId")'),
     ("lateral_join",
-     'SELECT t."Name", x.* FROM "Track" t, '
-     'LATERAL (SELECT "Title" FROM "Album" WHERE "Album"."AlbumId" = t."AlbumId") x'),
+     ('SELECT t."Name", x.* FROM "Track" t, '
+      'LATERAL (SELECT "Title" FROM "Album" WHERE "Album"."AlbumId" = t."AlbumId") x')),
     ("case_expression",
      "SELECT CASE WHEN \"Milliseconds\" > 1000 THEN 'long' ELSE 'short' END FROM \"Track\""),
     ("aggregate_filter",
@@ -75,8 +74,8 @@ VALID_CASES = [
     ("recursive_cte_numbers",
      'WITH RECURSIVE nums AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM nums WHERE n < 5) SELECT n FROM nums'),
     ("recursive_cte_real_table",
-     'WITH RECURSIVE t AS (SELECT "AlbumId" FROM "Track" WHERE "AlbumId" = 1 '
-     'UNION ALL SELECT "AlbumId" FROM t) SELECT * FROM t'),
+     ('WITH RECURSIVE t AS (SELECT "AlbumId" FROM "Track" WHERE "AlbumId" = 1 '
+      'UNION ALL SELECT "AlbumId" FROM t) SELECT * FROM t')),
 ]
 
 
@@ -104,8 +103,8 @@ HIDDEN_CAUGHT_CASES = [
     ("join_using / hidden table",
      'SELECT "Title" FROM "Track" JOIN "Bogus" USING ("AlbumId")', "Bogus"),
     ("lateral / qualified col",
-     'SELECT t."Name", x.* FROM "Track" t, '
-     'LATERAL (SELECT "Album"."Bogus" FROM "Album" WHERE "Album"."AlbumId" = t."AlbumId") x', "Bogus"),
+     ('SELECT t."Name", x.* FROM "Track" t, '
+      'LATERAL (SELECT "Album"."Bogus" FROM "Album" WHERE "Album"."AlbumId" = t."AlbumId") x'), "Bogus"),
     ("case / unqualified col (single table)",
      "SELECT CASE WHEN \"Bogus\" > 1000 THEN 'long' ELSE 'short' END FROM \"Track\"", "Bogus"),
     ("filter / unqualified col (single table)",

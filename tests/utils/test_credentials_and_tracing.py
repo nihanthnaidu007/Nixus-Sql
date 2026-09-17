@@ -13,8 +13,7 @@ import os
 
 import pytest
 
-from nixus.config import Settings, is_placeholder, apply_tracing_gate
-
+from nixus.config import Settings, is_placeholder
 
 # ── is_placeholder / credential detection ───────────────────────────────────
 

@@ -1,11 +1,13 @@
+from datetime import datetime
+
 import sqlglot
 from sqlglot.errors import ParseError
-from datetime import datetime
+
 from nixus.graph.state import SQLAgentState
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def validate_syntax_node(state: SQLAgentState) -> SQLAgentState:

@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { runEditedSql, type LiveProgress, type NormalizedResult } from "@/lib/api";
+import {
+  runEditedSql,
+  type ChartConfig,
+  type LiveProgress,
+  type NormalizedResult,
+} from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { SqlBlock } from "./SqlBlock";
 import { ResultTable } from "./ResultTable";
@@ -10,6 +15,7 @@ import { ConfidenceBanner } from "./ConfidenceBanner";
 import { IntelligenceStrip } from "./IntelligenceStrip";
 import { LivePipeline, PipelineSection } from "./Pipeline";
 import { ExportButtons } from "./ExportButtons";
+import { GuardrailChips } from "./GuardrailChips";
 
 const ENTITY_CAP = 8;
 
@@ -56,6 +62,39 @@ function ViewToggle({
       >
         Chart
       </button>
+    </div>
+  );
+}
+
+/**
+ * W2 D1 — the chart-type override. The backend's classify_chart decision stays
+ * the DEFAULT ("auto"); when a result is chartable the user may switch among the
+ * four renderable types. The choice synthesizes a client-side ChartConfig from
+ * the SAME x/y primitives — it never re-queries or re-classifies.
+ */
+const CHART_CHOICES = ["bar", "line", "pie", "scatter"] as const;
+type ChartOverride = "auto" | (typeof CHART_CHOICES)[number];
+
+function ChartTypePicker({
+  value,
+  onChange,
+}: {
+  value: ChartOverride;
+  onChange: (t: ChartOverride) => void;
+}) {
+  return (
+    <div className="chart-picker" role="group" aria-label="Chart type">
+      {(["auto", ...CHART_CHOICES] as const).map((t) => (
+        <button
+          key={t}
+          type="button"
+          aria-pressed={value === t}
+          onClick={() => onChange(t)}
+          title={t === "auto" ? "The backend's chart decision" : `Render as ${t}`}
+        >
+          {t === "auto" ? "Auto" : t[0].toUpperCase() + t.slice(1)}
+        </button>
+      ))}
     </div>
   );
 }
@@ -196,6 +235,10 @@ function SqlEditor({
 
 export function AnswerView({ result }: { result: NormalizedResult }) {
   const [mode, setMode] = useState<ResultMode>("table");
+  // W2 D1 — chart-type override. "auto" (the default) defers to the backend's
+  // classify_chart decision; a picked type re-renders the SAME x/y primitives
+  // through ChartView. Local state only; resets on every new result.
+  const [chartOverride, setChartOverride] = useState<ChartOverride>("auto");
 
   // B6 — edit-SQL + re-run. A successful re-run PATCHES the rendered result in place
   // (`patched`), so the SQL / table / chart / footer below all read from `view`. The
@@ -214,6 +257,7 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
     setEditError(null);
     setRerunning(false);
     setMode("table");
+    setChartOverride("auto");
   }, [result]);
 
   const view = patched ?? result;
@@ -223,6 +267,14 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
   // confidence, pipeline) rather than fabricate them for SQL the system didn't reason about.
   const isEdited = patched !== null;
   const chartable = hasChart(view.chartConfig);
+  // W2 D1 — the chart the user asked for, or the backend's when on "auto". The
+  // override keeps the backend's x/y primitives and swaps ONLY the type; a shape
+  // that doesn't map degrades to ChartView's honest NoChart state, never an
+  // empty plot. classify_chart.py is untouched and stays the default.
+  const activeChartConfig: ChartConfig | null =
+    chartOverride !== "auto" && view.chartConfig
+      ? { ...view.chartConfig, chart_type: chartOverride }
+      : view.chartConfig;
 
   function openEditor() {
     setDraft(view.sql);
@@ -246,6 +298,7 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
       setPatched(outcome.result);
       setEditing(false);
       setMode("table"); // land on the table for the freshly run result
+      setChartOverride("auto"); // ...and the picker defers to the backend again
     } else {
       // Rejected write / bad query — shown cleanly inside the editor, prior result kept.
       setEditError(outcome.error ?? "The edited SQL could not be run.");
@@ -303,7 +356,15 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
               name comes from the backend (timestamped), so none is passed. */}
           <ExportButtons sql={view.sql} />
           <ViewToggle mode={mode} onMode={setMode} chartable={chartable} />
+          {/* W2 D1 — the type override sits beside the toggle, in chart view only,
+              and only when there is a chart to override. Local state; no refetch. */}
+          {mode === "chart" && chartable && (
+            <ChartTypePicker value={chartOverride} onChange={setChartOverride} />
+          )}
         </div>
+        {/* W2 D2.3 — the guardrails as a visible surface: caps, timeout, budgets,
+            the EXPLAIN estimate when present, and this run's warnings. */}
+        <GuardrailChips result={view} />
         {mode === "table" ? (
           <ResultTable
             columns={view.columns}
@@ -312,7 +373,7 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
             cached={view.servedFromCache}
           />
         ) : (
-          <ChartView config={view.chartConfig} rows={view.rows} />
+          <ChartView config={activeChartConfig} rows={view.rows} />
         )}
         <ResultFooter
           rowCount={view.rowCount}

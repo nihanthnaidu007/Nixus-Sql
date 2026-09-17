@@ -17,6 +17,7 @@ from nixus.graph.nodes.classify_chart import classify_chart_node
 from nixus.graph.nodes.execute_query import execute_query_node
 from nixus.graph.nodes.explain_result import explain_result_node
 from nixus.graph.nodes.generate_sql import generate_sql_node
+from nixus.graph.nodes.guardrail_preview import guardrail_preview_node
 from nixus.graph.nodes.parse_intent import parse_intent_node
 from nixus.graph.nodes.retrieve_fewshot import retrieve_fewshot_node
 from nixus.graph.nodes.retrieve_schema import retrieve_schema_node
@@ -109,6 +110,7 @@ def build_graph():
     workflow.add_node("generate_sql",     generate_sql_node)
     workflow.add_node("validate_syntax",  validate_syntax_node)
     workflow.add_node("verify_grounding", verify_grounding_node)
+    workflow.add_node("guardrail_preview", guardrail_preview_node)
     workflow.add_node("execute_query",    execute_query_node)
     workflow.add_node("check_result",     check_result_node)
     workflow.add_node("self_correct",     self_correct_node)
@@ -151,15 +153,19 @@ def build_graph():
         {"verify_grounding": "verify_grounding", "self_correct": "self_correct",
          "explain_result": "explain_result", "END": END})
 
-    # Grounded → execute. Hallucinated identifier → the EXISTING self_correct loop
-    # (mirrors validate_syntax: self_correct until the attempt cap, then explain).
+    # Grounded → a pre-execution guardrail preview (plain EXPLAIN: estimated rows +
+    # plan cost, degraded silently), THEN execute. Hallucinated identifier → the
+    # EXISTING self_correct loop (mirrors validate_syntax: self_correct until the
+    # attempt cap, then explain).
     workflow.add_conditional_edges("verify_grounding",
         lambda s: (
-            "execute_query" if s["grounding_result"]["is_grounded"]
+            "guardrail_preview" if s["grounding_result"]["is_grounded"]
             else ("self_correct" if s["correction_attempts"] < MAX_ATTEMPTS else "explain_result")
         ),
-        {"execute_query": "execute_query", "self_correct": "self_correct",
+        {"guardrail_preview": "guardrail_preview", "self_correct": "self_correct",
          "explain_result": "explain_result"})
+
+    workflow.add_edge("guardrail_preview", "execute_query")
 
     workflow.add_edge("execute_query", "check_result")
 

@@ -101,6 +101,9 @@ class SQLAgentState(TypedDict):
     generated_sql: str
     validation_result: dict | None
     grounding_result: dict | None
+    # Pre-execution EXPLAIN estimate (guardrail_preview_node): {estimated_rows, plan_cost}.
+    # None when the preview degraded or never ran (cache hit) — absence is honest.
+    guardrail_preview: dict | None
     execution_result: dict | None
     result_quality: dict | None
     correction_attempts: int

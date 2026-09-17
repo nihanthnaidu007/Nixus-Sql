@@ -32,6 +32,7 @@ const NODES: { key: string; label: string; branch?: boolean }[] = [
   { key: "generate_sql", label: "Generate" },
   { key: "validate_syntax", label: "Validate" },
   { key: "verify_grounding", label: "Grounding" },
+  { key: "guardrail_preview", label: "Preview" },
   { key: "execute_query", label: "Execute" },
   { key: "check_result", label: "Check result" },
   { key: "self_correct", label: "Self-correct", branch: true },
@@ -56,6 +57,7 @@ const CACHE_BYPASS = new Set([
   "generate_sql",
   "validate_syntax",
   "verify_grounding",
+  "guardrail_preview",
   "execute_query",
   "check_result",
 ]);

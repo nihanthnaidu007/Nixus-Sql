@@ -17,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from api.auth import APIKeyMiddleware, configured_api_key
 from api.export import router as export_router
+from api.guardrails import router as guardrails_router
 from api.history import router as history_router
 from api.saved_queries import router as saved_queries_router
 from api.sessions import UnknownSessionError, resolve_session_id
@@ -303,8 +304,8 @@ async def stream_agent(req: StreamRequest):
         NODE_NAMES = {
             "scope_classifier", "scope_response", "parse_intent", "check_cache",
             "retrieve_schema", "retrieve_fewshot", "generate_sql", "validate_syntax",
-            "execute_query", "check_result", "self_correct", "classify_chart",
-            "explain_result"
+            "guardrail_preview", "execute_query", "check_result", "self_correct",
+            "classify_chart", "explain_result"
         }
 
         try:
@@ -376,6 +377,7 @@ async def stream_agent(req: StreamRequest):
                         "generated_sql": output.get("generated_sql"),
                         "validation_result": output.get("validation_result"),
                         "execution_result": output.get("execution_result"),
+                        "guardrail_preview": output.get("guardrail_preview"),
                         "result_quality": output.get("result_quality"),
                         "chart_config": output.get("chart_config"),
                         "explanation": output.get("explanation"),
@@ -448,6 +450,7 @@ async def run_edited_sql(req: RunSQLRequest):
     from nixus.graph.nodes.check_result import check_result_node
     from nixus.graph.nodes.classify_chart import classify_chart_node
     from nixus.graph.nodes.execute_query import execute_query_node
+    from nixus.graph.nodes.guardrail_preview import guardrail_preview_node
     from nixus.graph.nodes.validate_syntax import validate_syntax_node
 
     mini_state = SQLAgentState(
@@ -475,6 +478,9 @@ async def run_edited_sql(req: RunSQLRequest):
     error_message = errors[0] if errors else validation_result.get("error_message", "SQL validation failed.")
 
     if is_valid:
+        # Same pre-execution guardrail preview the graph path gets (plain EXPLAIN,
+        # silent degrade) — edited SQL deserves the same visibility.
+        mini_state = await guardrail_preview_node(mini_state)
         mini_state = await execute_query_node(mini_state)
         mini_state = await check_result_node(mini_state)
         mini_state = await classify_chart_node(mini_state)
@@ -581,8 +587,8 @@ async def health():
         "nodes": [
             "scope_classifier", "scope_response", "parse_intent", "check_cache",
             "retrieve_schema", "retrieve_fewshot", "generate_sql", "validate_syntax",
-            "verify_grounding", "execute_query", "check_result", "self_correct",
-            "classify_chart", "explain_result"
+            "verify_grounding", "guardrail_preview", "execute_query", "check_result",
+            "self_correct", "classify_chart", "explain_result"
         ],
         "version": "3.0.0"
     }
@@ -621,6 +627,10 @@ app.include_router(router)
 app.include_router(export_router, prefix="/api/v1")
 app.include_router(saved_queries_router, prefix="/api/v1")
 app.include_router(history_router, prefix="/api/v1")
+
+# Phase 2 W2 — the guardrails manifest: a static settings read, same inherited
+# fail-closed auth as every route above.
+app.include_router(guardrails_router, prefix="/api/v1")
 
 # Unversioned health alias for infrastructure probes (load balancers, uptime
 # checks) that expect a stable, version-independent path. Same handler as

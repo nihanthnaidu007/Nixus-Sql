@@ -16,6 +16,9 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from api.auth import APIKeyMiddleware, configured_api_key
+from api.export import router as export_router
+from api.history import router as history_router
+from api.saved_queries import router as saved_queries_router
 from api.sessions import UnknownSessionError, resolve_session_id
 from nixus.config import is_placeholder, settings
 from nixus.db.connection import check_db_connection, get_state_engine, get_target_engine
@@ -23,7 +26,11 @@ from nixus.db.fewshot_store import get_fewshot_stats
 from nixus.db.query_cache import evict_stale_cache_entries, get_cache_stats
 from nixus.graph.graph import aclose_checkpointer, build_graph, init_checkpointer
 from nixus.graph.state import SQLAgentState
-from nixus.services.query_service import get_thread_config, run_query
+from nixus.services.query_service import (
+    get_thread_config,
+    record_history_safely,
+    run_query,
+)
 from nixus.utils.langsmith_config import (
     get_run_config,
     get_trace_url,
@@ -404,6 +411,11 @@ async def stream_agent(req: StreamRequest):
                         duration_ms=(time.monotonic() - stream_start) * 1000,
                         error=output.get("error"),
                     )
+                    # One history row per streamed query too (Phase 2 W1 D3) — best-effort.
+                    await record_history_safely(
+                        session_id, req.user_query, output,
+                        (time.monotonic() - stream_start) * 1000,
+                    )
                     yield {"event": "complete", "data": json.dumps(final, default=str)}
 
         except Exception as e:
@@ -422,6 +434,7 @@ async def run_edited_sql(req: RunSQLRequest):
     """
     session_id = await resolve_session_id(req.session_id)
 
+    run_sql_start = time.monotonic()
     is_safe, reason = is_read_only_sql(req.sql)
     if not is_safe:
         return JSONResponse(
@@ -468,6 +481,14 @@ async def run_edited_sql(req: RunSQLRequest):
     else:
         if not mini_state.get("error"):
             mini_state["error"] = error_message
+
+    # Edited-SQL runs are history too (Phase 2 W1 D3) — best-effort.
+    await record_history_safely(
+        session_id,
+        mini_state.get("user_query") or "[user-edited SQL]",
+        mini_state,
+        (time.monotonic() - run_sql_start) * 1000,
+    )
 
     return mini_state
 
@@ -594,6 +615,12 @@ async def fewshot_stats():
 
 # Mount every route defined above under /api/v1.
 app.include_router(router)
+
+# Phase 2 W1 routers (export / saved queries / query history) — same /api/v1
+# prefix and the same middleware stack (auth is inherited, not re-implemented).
+app.include_router(export_router, prefix="/api/v1")
+app.include_router(saved_queries_router, prefix="/api/v1")
+app.include_router(history_router, prefix="/api/v1")
 
 # Unversioned health alias for infrastructure probes (load balancers, uptime
 # checks) that expect a stable, version-independent path. Same handler as

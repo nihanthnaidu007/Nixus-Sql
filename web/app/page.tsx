@@ -34,6 +34,8 @@ import { AnswerView, LiveRunView, RunningState } from "@/components/ResultView";
 import { Clarification, ConversationContext } from "@/components/Clarification";
 import { Refusal } from "@/components/Refusal";
 import { SystemStatus } from "@/components/SystemStatus";
+import { SavedQueries, type SaveDraft } from "@/components/SavedQueries";
+import { HistoryPanel } from "@/components/HistoryPanel";
 
 /** An in-progress / completed clarification thread for the current conversation. */
 interface Thread {
@@ -54,6 +56,19 @@ export default function Page() {
   const [error, setError] = useState<{ message: string; traceId?: string } | null>(
     null,
   );
+  // W1 history panel wiring: the answered run's server-issued session (the
+  // panel scopes to it) + a bump counter that tells the panel a run finished,
+  // since neither the session id nor the filters change on a re-run.
+  const [historySessionId, setHistorySessionId] = useState<string | null>(null);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+
+  /** After ANY completed run, scope the history panel to the run's session and
+   *  tell it to refetch — the pipeline has written a fresh history row by now.
+   *  Clarifications keep the session (set via thread) but still bump refresh. */
+  function syncHistoryAfterRun(r: NormalizedResult) {
+    if (r.sessionId) setHistorySessionId(r.sessionId);
+    setHistoryRefresh((n) => n + 1);
+  }
 
   /**
    * Run a query LIVE over SSE (the default — it animates the pipeline), with an
@@ -96,6 +111,7 @@ export default function Page() {
       if (r.isClarification) {
         setThread({ originalQuestion: q, sessionId: r.sessionId, exchanges: [] });
       }
+      syncHistoryAfterRun(r);
     } catch (err) {
       setError(toError(err));
     } finally {
@@ -138,6 +154,43 @@ export default function Page() {
 
   const showThreadContext =
     thread && result && !result.isClarification && thread.exchanges.length > 0;
+
+  // Phase 2 W1 — saved queries: the CURRENT grounded answer becomes a savable
+  // draft (question + SQL). Present only for answered runs; a refusal or a
+  // clarification prompt has nothing meaningful to persist.
+  const saveDraft: SaveDraft | null =
+    result && !loading && result.isAnswer
+      ? { naturalLanguage: question.trim(), generatedSql: result.sql }
+      : null;
+
+  /** Re-ask a saved query or history row: the same fresh-run path (SSE with the
+   *  /run fallback), just with a supplied question. Never executes stored SQL. */
+  function runFromPanel(naturalLanguage: string) {
+    setQuestion(naturalLanguage);
+    void submitFreshWith(naturalLanguage);
+  }
+
+  async function submitFreshWith(q: string) {
+    if (!q || loading) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setThread(null);
+    setLive(EMPTY_LIVE);
+    try {
+      const r = await runWithFallback(q, {});
+      setResult(r);
+      if (r.isClarification) {
+        setThread({ originalQuestion: q, sessionId: r.sessionId, exchanges: [] });
+      }
+      syncHistoryAfterRun(r);
+    } catch (err) {
+      setError(toError(err));
+    } finally {
+      setLoading(false);
+      setLive(null);
+    }
+  }
 
   return (
     <main className="shell">
@@ -204,6 +257,17 @@ export default function Page() {
           {result.isAnswer && <AnswerView result={result} />}
         </>
       )}
+
+      {/* Phase 2 W1 — the persistent workspace: saved queries (D2/D4) and the
+          query-history record (D3/D4). Both re-ask through the SAME pipeline —
+          runFromPanel never executes stored SQL. They load their own data, so
+          they render quiet empty states when nothing exists yet. */}
+      <SavedQueries draft={saveDraft} onRun={runFromPanel} />
+      <HistoryPanel
+        sessionId={historySessionId}
+        refreshKey={historyRefresh}
+        onRun={runFromPanel}
+      />
 
       {/* Phase 18 — a DISCREET, peripheral system-status footer (DB health +
           cache/few-shot stats). Always present, quiet, never inline with a

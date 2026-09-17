@@ -9,6 +9,7 @@ import { ChartView, hasChart } from "./ChartView";
 import { ConfidenceBanner } from "./ConfidenceBanner";
 import { IntelligenceStrip } from "./IntelligenceStrip";
 import { LivePipeline, PipelineSection } from "./Pipeline";
+import { ExportButtons } from "./ExportButtons";
 
 const ENTITY_CAP = 8;
 
@@ -296,6 +297,11 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
       <section className="section s1">
         <div className="result-head">
           <span className="label">Result</span>
+          {/* W1 D1 — export the CURRENT result's SQL through the backend's
+              guarded export path; capped downloads label themselves. Placed on
+              the Result header so it is adjacent to what it exports. The export
+              name comes from the backend (timestamped), so none is passed. */}
+          <ExportButtons sql={view.sql} />
           <ViewToggle mode={mode} onMode={setMode} chartable={chartable} />
         </div>
         {mode === "table" ? (

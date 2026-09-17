@@ -23,6 +23,50 @@ from nixus.utils.logging_config import log_query_complete, log_query_start
 logger = logging.getLogger("nixus_sql.api")
 
 
+def derive_status(outcome: str | None, error: str | None) -> str:
+    """The history status for one finished run (pure).
+
+    The graph's outcome discriminator is the truth when present; a run that
+    never reached an outcome but carries an error is ERROR; anything else is
+    recorded honestly as UNKNOWN rather than guessed.
+    """
+    if outcome:
+        return outcome
+    if error:
+        return "ERROR"
+    return "UNKNOWN"
+
+
+async def record_history_safely(
+    session_id: str,
+    question: str,
+    final_state: dict,
+    duration_ms: float,
+) -> None:
+    """Persist one query_history row; a history failure NEVER fails a query.
+
+    Resilience pattern of this codebase (see ruff.toml header): broad
+    except-with-log for bookkeeping that must not break the primary path.
+    """
+    from nixus.db.query_history_store import record_query_history
+
+    try:
+        execution = final_state.get("execution_result") or {}
+        await record_query_history(
+            session_id=session_id,
+            question=question,
+            generated_sql=final_state.get("generated_sql") or "",
+            status=derive_status(final_state.get("outcome"), final_state.get("error")),
+            duration_ms=duration_ms,
+            row_count=int(execution.get("row_count") or 0),
+        )
+    except Exception:
+        logger.exception(
+            "Query-history recording failed for session %s; the query result is unaffected",
+            session_id,
+        )
+
+
 def get_thread_config(session_id: str, base_config: dict | None = None) -> dict:
     """Merge a LangGraph thread_id into the run config so the AsyncPostgresSaver checkpointer can find the checkpoint."""
     cfg = dict(base_config) if base_config else {}
@@ -71,6 +115,7 @@ async def run_query(
     ))
     start = log_query_start(logger, session_id, user_query)
     final_state = await build_graph().ainvoke(initial_state, config=config)
+    duration_ms = (time.monotonic() - start) * 1000
     log_query_complete(
         logger,
         session_id=session_id,
@@ -81,7 +126,9 @@ async def run_query(
         result_quality=(final_state.get("result_quality") or {}).get("status", "unknown"),
         row_count=(final_state.get("execution_result") or {}).get("row_count", 0),
         chart_type=(final_state.get("chart_config") or {}).get("chart_type"),
-        duration_ms=(time.monotonic() - start) * 1000,
+        duration_ms=duration_ms,
         error=final_state.get("error"),
     )
+    # One history row per executed query (Phase 2 W1 D3) — best-effort.
+    await record_history_safely(session_id, user_query, final_state, duration_ms)
     return final_state

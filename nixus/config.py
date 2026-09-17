@@ -116,7 +116,9 @@ class Settings(BaseSettings):
     # at the call site. Kept as a raw string here so the call site can apply the
     # exact same split; a Pydantic list field would coerce commas differently
     # (and reject some previously-accepted input). future: could be a typed list.
-    allowed_origins: str = Field(default="http://localhost:8501,http://localhost:3000")
+    # The retired Streamlit dev-server origin (:8501) was removed from this
+    # default; add origins here only for UIs actually deployed.
+    allowed_origins: str = Field(default="http://localhost:3000")
     llm_health_cache_ttl: int = Field(default=300)         # LLM_HEALTH_CACHE_TTL
 
     # ── API authentication (X-API-Key) ──────────────────────────────────────

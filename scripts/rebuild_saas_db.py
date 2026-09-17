@@ -37,7 +37,7 @@ import argparse
 import os
 import re
 import sys
-from urllib.parse import urlsplit, unquote
+from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

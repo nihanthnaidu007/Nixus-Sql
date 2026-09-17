@@ -1,16 +1,17 @@
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from typing import Optional
 
-from nixus.config import settings
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import (
-    create_async_engine,
     AsyncEngine,
     AsyncSession,
-    async_sessionmaker
+    async_sessionmaker,
+    create_async_engine,
 )
-from sqlalchemy import create_engine, text
+
+from nixus.config import settings
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TWO independent connections (split in 2.1):
@@ -85,7 +86,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 TARGET_DATABASE_URL = settings.target_url
 
-target_engine: Optional[AsyncEngine] = (
+target_engine: AsyncEngine | None = (
     create_async_engine(
         _to_async_url(TARGET_DATABASE_URL),
         pool_size=5,

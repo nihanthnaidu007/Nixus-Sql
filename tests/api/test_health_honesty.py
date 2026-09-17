@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-import api.main as main
+from api import main
 
 
 @pytest.fixture(autouse=True)

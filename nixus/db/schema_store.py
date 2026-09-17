@@ -1,4 +1,5 @@
 from sqlalchemy import text
+
 # schema_embeddings is NIXUS-owned bookkeeping → STATE database (read-write).
 from nixus.db.connection import state_engine
 

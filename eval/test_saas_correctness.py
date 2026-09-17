@@ -12,10 +12,8 @@ untuned, honest measurement.
 """
 import pytest
 
-from eval.conftest import run_query, run_gold_sql, extract_rows
-from eval.saas_gold import ANSWERABLE, SCOPE
-from eval.result_equivalence import results_equivalent
 from eval.run_saas_benchmark import score_answerable_case, score_scope_case
+from eval.saas_gold import ANSWERABLE, SCOPE
 
 
 @pytest.mark.parametrize("case", ANSWERABLE, ids=[c["id"] for c in ANSWERABLE])

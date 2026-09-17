@@ -1,4 +1,5 @@
-from typing import TypedDict, Optional
+from typing import TypedDict
+
 from pydantic import BaseModel
 
 
@@ -6,7 +7,7 @@ class SchemaTable(BaseModel):
     table_name: str
     description: str
     columns_json: str
-    sample_values_json: Optional[str]
+    sample_values_json: str | None
     relevance_score: float
 
 
@@ -21,11 +22,11 @@ class FewShotExample(BaseModel):
 class CacheResult(BaseModel):
     hit: bool
     similarity: float
-    cached_sql: Optional[str] = None
-    result_preview: Optional[list] = None
-    chart_type: Optional[str] = None
-    explanation: Optional[str] = None
-    cache_id: Optional[int] = None
+    cached_sql: str | None = None
+    result_preview: list | None = None
+    chart_type: str | None = None
+    explanation: str | None = None
+    cache_id: int | None = None
 
 
 class ValidationResult(BaseModel):
@@ -41,7 +42,7 @@ class ExecutionResult(BaseModel):
     columns: list
     row_count: int
     execution_time_ms: float
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ResultQuality(BaseModel):
@@ -60,12 +61,12 @@ class CorrectionRecord(BaseModel):
 
 class ChartConfig(BaseModel):
     chart_type: str
-    x_column: Optional[str] = None
-    y_column: Optional[str] = None
-    color_column: Optional[str] = None
+    x_column: str | None = None
+    y_column: str | None = None
+    color_column: str | None = None
     title: str
     reasoning: str
-    plotly_json: Optional[str] = None
+    plotly_json: str | None = None
 
 
 class StreamUpdate(BaseModel):
@@ -80,17 +81,17 @@ class SQLAgentState(TypedDict):
     session_id: str
     # Stateless clarification round-trip inputs (Option B): carried in with the
     # request, not persisted server-side. Absent/0 for a normal single-turn query.
-    clarification_context: Optional[dict]
+    clarification_context: dict | None
     clarification_round: int
-    scope_category: Optional[str]
-    scope_message: Optional[str]
+    scope_category: str | None
+    scope_message: str | None
     # Response-outcome discriminator + the text the client surfaces for each.
-    outcome: Optional[str]
-    clarifying_question: Optional[str]
-    reason: Optional[str]
+    outcome: str | None
+    clarifying_question: str | None
+    reason: str | None
     intent_class: str
     extracted_entities: list
-    cache_result: Optional[dict]
+    cache_result: dict | None
     served_from_cache: bool
     relevant_schemas: list
     schema_context: str
@@ -98,24 +99,24 @@ class SQLAgentState(TypedDict):
     similar_examples: list
     fewshot_context: str
     generated_sql: str
-    validation_result: Optional[dict]
-    grounding_result: Optional[dict]
-    execution_result: Optional[dict]
-    result_quality: Optional[dict]
+    validation_result: dict | None
+    grounding_result: dict | None
+    execution_result: dict | None
+    result_quality: dict | None
     correction_attempts: int
     correction_history: list
-    chart_config: Optional[dict]
+    chart_config: dict | None
     explanation: str
     confidence_score: float
     # Categorical confidence (5.2): the verdict plus its legible reasoning, so the
     # API/UI can show WHY confidence is what it is rather than a bare number.
-    confidence: Optional[str]
+    confidence: str | None
     confidence_reasons: list
     confidence_signals: dict
     current_node: str
     completed_nodes: list
     is_complete: bool
-    trace_id: Optional[str]
-    trace_url: Optional[str]
-    error: Optional[str]
+    trace_id: str | None
+    trace_url: str | None
+    error: str | None
     stream_updates: list

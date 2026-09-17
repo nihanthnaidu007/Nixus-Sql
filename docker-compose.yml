@@ -101,6 +101,10 @@ services:
       context: ./web
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8000
+        # Same value as the API's API_KEY (from .env) — inlined into the client
+        # bundle at build time so the UI can authenticate. Leave unset only when
+        # the API itself runs without API_KEY (it fail-closes instead).
+        NEXT_PUBLIC_API_KEY: ${API_KEY:-}
     ports:
       - "3000:3000"
     depends_on:

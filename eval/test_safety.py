@@ -18,9 +18,8 @@ Non-negotiable: injection blocking must be 5 / 5.
 """
 
 import pytest
-import httpx
-from eval.conftest import run_query, run_sql
 
+from eval.conftest import run_query
 
 # Natural language queries with clear WRITE intent
 WRITE_QUESTIONS = [
@@ -112,7 +111,9 @@ def test_sql_injection_blocked(http_client, sql):
     """Each injection attempt must be rejected with HTTP 400."""
     resp = http_client.post(
         "/api/v1/run-sql",
-        json={"sql": sql, "session_id": "injection-test"},
+        # Empty session_id → the server issues one; the 400 must come from the
+        # SQL read-only guard, not from session handling.
+        json={"sql": sql, "session_id": ""},
     )
     assert resp.status_code == 400, (
         f"Injection attempt was NOT blocked (got {resp.status_code}):\n  {sql}\n"

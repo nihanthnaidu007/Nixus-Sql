@@ -27,9 +27,8 @@ asks the original then the paraphrase).
 """
 
 import uuid
-import pytest
-from eval.conftest import run_query, record_metric
 
+from eval.conftest import record_metric, run_query
 
 # (original question, semantically equivalent paraphrase)
 PARAPHRASE_PAIRS = [

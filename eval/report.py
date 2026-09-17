@@ -9,8 +9,8 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,7 +47,7 @@ def _fmt_ms(metrics: dict, key: str) -> str:
     v = metrics.get(key)
     if v is None:
         return "—"
-    return f"{int(round(float(v)))} ms"
+    return f"{round(float(v))} ms"
 
 
 def _fmt_rate(metrics: dict, key: str) -> str:
@@ -61,7 +61,7 @@ def _fmt_pct(latencies: dict | None, p_key: str) -> str:
     """Render one percentile from a nested {p50, p95, p99, samples} dict."""
     if not latencies or p_key not in latencies or latencies[p_key] is None:
         return "—"
-    return f"{int(round(float(latencies[p_key])))} ms"
+    return f"{round(float(latencies[p_key]))} ms"
 
 
 def _fmt_samples(latencies: dict | None) -> str:
@@ -199,7 +199,7 @@ def generate_report(results_path: Path, output_path: Path, metrics_path: Path | 
 
     # Failed test details
     all_failed: list[str] = []
-    for k, b in categories.items():
+    for b in categories.values():
         all_failed.extend(b["ids"])
 
     if all_failed:

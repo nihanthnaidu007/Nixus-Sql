@@ -25,3 +25,13 @@ nixus = "nixus.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["nixus*"]
+
+[tool.ruff]
+# Pinned to ruff 0.16.x in requirements-dev.txt — its (much expanded) default
+# ruleset is what CI enforces. BLE001 (blind except) and S110 (try-except-pass)
+# conflict with this codebase's deliberate resilience pattern: broad
+# except-with-fallback guards in graph nodes, the API, and the eval probes.
+# Narrowing those handlers would change error semantics, which is out of
+# Wave-0 scope; a dedicated resilience pass may revisit.
+[tool.ruff.lint]
+ignore = ["BLE001", "S110"]

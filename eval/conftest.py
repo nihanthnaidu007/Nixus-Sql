@@ -5,11 +5,9 @@ The API server must be running before executing any tests.
 Set NIXUS_API_URL to override the default http://localhost:8000.
 """
 
-import os
 import json
+import os
 import time
-import uuid
-import math
 from decimal import Decimal
 from pathlib import Path
 
@@ -22,6 +20,17 @@ from sqlalchemy import text
 from nixus.db.connection import sync_engine, sync_target_engine
 
 BASE_URL = os.environ.get("NIXUS_API_URL", "http://localhost:8000")
+
+
+def auth_headers() -> dict:
+    """X-API-Key headers when the target API is secured (NIXUS_API_KEY env).
+
+    The API fails closed without a configured key and 401s without the header;
+    the harness passes it through from the environment so the same benchmark
+    runs against a locked-down server. Empty dict when unset (unsecured API).
+    """
+    key = os.environ.get("NIXUS_API_KEY")
+    return {"X-API-Key": key} if key else {}
 
 # The retired Chinook gold set (6.2) lives under eval/archive_chinook/ for
 # history and must NOT be collected as part of the benchmark of record. See
@@ -147,30 +156,33 @@ def http_client(infra_status: _InfraStatus):
     # the client is only ever constructed against a reachable server.
     if not infra_status.api_ok:
         pytest.skip(f"API not reachable at {BASE_URL}.\n{_START_HINT}")
-    with httpx.Client(base_url=BASE_URL, timeout=120.0) as client:
+    with httpx.Client(base_url=BASE_URL, timeout=120.0, headers=auth_headers()) as client:
         yield client
 
 
 def run_query(client: httpx.Client, question: str, session_id: str | None = None) -> dict:
-    """POST /api/run and return the final state dict."""
-    sid = session_id or str(uuid.uuid4())
-    resp = client.post("/api/v1/run", json={"user_query": question, "session_id": sid})
+    """POST /api/run and return the final state dict.
+
+    ``session_id`` stays EMPTY unless a caller threads one back: session ids are
+    server-issued (an id the server never issued 404s), and the final state
+    carries the id to reuse on follow-ups (clarification rounds).
+    """
+    resp = client.post("/api/v1/run", json={"user_query": question, "session_id": session_id or ""})
     resp.raise_for_status()
     return resp.json()
 
 
 def run_sql(client: httpx.Client, sql: str) -> dict:
-    """POST /api/run-sql and return the mini-state dict."""
-    resp = client.post("/api/v1/run-sql", json={"sql": sql, "session_id": str(uuid.uuid4())})
+    """POST /api/run-sql and return the mini-state dict (server-issued session)."""
+    resp = client.post("/api/v1/run-sql", json={"sql": sql, "session_id": ""})
     resp.raise_for_status()
     return resp.json()
 
 
 def run_query_timed(client: httpx.Client, question: str) -> tuple[dict, float]:
-    """POST /api/run and return (state, latency_ms)."""
-    sid = str(uuid.uuid4())
+    """POST /api/run and return (state, latency_ms). Session is server-issued."""
     t0 = time.monotonic()
-    resp = client.post("/api/v1/run", json={"user_query": question, "session_id": sid})
+    resp = client.post("/api/v1/run", json={"user_query": question, "session_id": ""})
     latency_ms = (time.monotonic() - t0) * 1000
     resp.raise_for_status()
     return resp.json(), latency_ms
@@ -209,7 +221,8 @@ def _is_numeric_val(v) -> bool:
 
 def _is_date_like(v) -> bool:
     """Return True for datetime objects and ISO-format date strings."""
-    from datetime import date, datetime as dt
+    from datetime import date
+    from datetime import datetime as dt
     if isinstance(v, (dt, date)):
         return True
     if isinstance(v, str):

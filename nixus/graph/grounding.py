@@ -166,7 +166,7 @@ def check_grounding(sql: str, schema: SchemaView) -> GroundingResult:
             if q in non_checkable or not reals:
                 continue  # CTE/derived/unknown qualifier → cannot/should not check
             if not any(schema.column_exists(rt, name) for rt in reals):
-                flag_column(sorted(reals)[0], name)
+                flag_column(min(reals), name)
         elif single_table is not None:
             if not schema.column_exists(single_table, name):
                 flag_column(single_table, name)

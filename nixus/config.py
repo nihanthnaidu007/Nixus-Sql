@@ -22,13 +22,12 @@ Intentionally NOT folded in (adapter-process-local, not shared app config):
 See the 1.1e report for the rationale.
 """
 import os
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def is_placeholder(value: Optional[str]) -> bool:
+def is_placeholder(value: str | None) -> bool:
     """True when a credential is empty or still an .env.example sentinel.
 
     The template ships sentinels shaped ``your_<name>_here`` —
@@ -72,23 +71,23 @@ class Settings(BaseSettings):
     # working. ``state_url`` resolves the two. Both default to None (the bare
     # read); ``nixus.db.connection`` enforces required-ness via its RuntimeError
     # guard, exactly as before.
-    state_database_url: Optional[str] = Field(default=None)   # STATE_DATABASE_URL
-    database_url: Optional[str] = Field(default=None)         # DATABASE_URL (legacy → state)
+    state_database_url: str | None = Field(default=None)   # STATE_DATABASE_URL
+    database_url: str | None = Field(default=None)         # DATABASE_URL (legacy → state)
 
     # Read-only handle the APP uses for the target database. Never written to.
-    target_database_url: Optional[str] = Field(default=None)  # TARGET_DATABASE_URL
+    target_database_url: str | None = Field(default=None)  # TARGET_DATABASE_URL
 
     # Writable OWNER connection to the target database, used ONLY by the one-time
     # Chinook seed / provisioning scripts (never by the app at runtime). The app's
     # only handle to the target is the read-only ``target_database_url`` above.
-    target_admin_database_url: Optional[str] = Field(default=None)  # TARGET_ADMIN_DATABASE_URL
+    target_admin_database_url: str | None = Field(default=None)  # TARGET_ADMIN_DATABASE_URL
 
     # ── LLM API keys ────────────────────────────────────────────────────────
     # Reads varied across sites: .get("ANTHROPIC_API_KEY") -> None and
     # .get("ANTHROPIC_API_KEY", "") -> "". Field mirrors the bare read (None);
     # the two ""-defaulting sites apply `or ""` to stay byte-identical.
-    anthropic_api_key: Optional[str] = Field(default=None)
-    openai_api_key: Optional[str] = Field(default=None)
+    anthropic_api_key: str | None = Field(default=None)
+    openai_api_key: str | None = Field(default=None)
 
     # ── Retrieval / correction tuning (int/float casts mirrored into the type) ─
     max_correction_attempts: int = Field(default=3)        # MAX_CORRECTION_ATTEMPTS
@@ -116,6 +115,13 @@ class Settings(BaseSettings):
     allowed_origins: str = Field(default="http://localhost:8501,http://localhost:3000")
     llm_health_cache_ttl: int = Field(default=300)         # LLM_HEALTH_CACHE_TTL
 
+    # ── API authentication (X-API-Key) ──────────────────────────────────────
+    # The shared key every /api client must send as the X-API-Key header (the
+    # health probe is exempt). Unset or placeholder → the API FAILS CLOSED: it
+    # answers 503 with setup guidance on every protected route instead of
+    # silently opening. Checked per-request so tests and rotations need no restart.
+    api_key: str | None = Field(default=None)           # API_KEY
+
     # ── Logging ─────────────────────────────────────────────────────────────
     # Old applied .upper(); the call site keeps .upper() to stay identical.
     log_level: str = Field(default="INFO")                 # LOG_LEVEL
@@ -128,7 +134,7 @@ class Settings(BaseSettings):
     # field — that would accept inputs the old code treated as False.
     langchain_tracing_v2: str = Field(default="false")     # LANGCHAIN_TRACING_V2
     langchain_project: str = Field(default="nixus-sql")    # LANGCHAIN_PROJECT
-    langchain_api_key: Optional[str] = Field(default=None)  # LANGCHAIN_API_KEY
+    langchain_api_key: str | None = Field(default=None)  # LANGCHAIN_API_KEY
 
     @property
     def tracing_enabled(self) -> bool:
@@ -147,7 +153,7 @@ class Settings(BaseSettings):
 
     # ── Resolved DB URLs ────────────────────────────────────────────────────
     @property
-    def state_url(self) -> Optional[str]:
+    def state_url(self) -> str | None:
         """The state (NIXUS-owned, read-write) DB URL.
 
         Prefers ``STATE_DATABASE_URL``; falls back to the legacy ``DATABASE_URL``
@@ -156,12 +162,12 @@ class Settings(BaseSettings):
         return self.state_database_url or self.database_url
 
     @property
-    def target_url(self) -> Optional[str]:
+    def target_url(self) -> str | None:
         """The target (user data, READ-ONLY) DB URL used by the app."""
         return self.target_database_url
 
     @property
-    def target_admin_url(self) -> Optional[str]:
+    def target_admin_url(self) -> str | None:
         """Writable OWNER URL to the target DB — bootstrap/seed scripts only."""
         return self.target_admin_database_url
 

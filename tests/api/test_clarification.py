@@ -10,16 +10,17 @@ import os
 
 import pytest
 
+import nixus.graph.nodes.scope_classifier as sc
+from nixus.config import is_placeholder
+from nixus.graph.nodes.scope_classifier import scope_classifier_node
 from nixus.graph.scope import (
+    CLARIFICATION_ROUND_CAP,
     ScopeCategory,
     ScopeResult,
-    outcome_for,
-    effective_clarification_round,
     build_clarified_query,
-    CLARIFICATION_ROUND_CAP,
+    effective_clarification_round,
+    outcome_for,
 )
-import nixus.graph.nodes.scope_classifier as sc
-from nixus.graph.nodes.scope_classifier import scope_classifier_node
 
 
 def _state(user_query, **extra):
@@ -153,8 +154,8 @@ async def test_normal_in_scope_is_answered_and_unmodified(monkeypatch):
 
 # ── LLM-backed (skipped without an API key) ─────────────────────────────────
 _NEEDS_KEY = pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"),
-    reason="needs ANTHROPIC_API_KEY for live classification",
+    is_placeholder(os.getenv("ANTHROPIC_API_KEY")),
+    reason="needs a REAL ANTHROPIC_API_KEY for live classification",
 )
 _SCHEMA = ("Tables available: Artist, Album, Track, Genre, Customer, Invoice, "
            "InvoiceLine, Employee, Playlist, PlaylistTrack, MediaType")

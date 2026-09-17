@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class ConfidenceLevel(Enum):
@@ -50,7 +49,7 @@ def assess_confidence(
     clarification_happened: bool,
     correction_attempts: int,
     grounded_cleanly: bool,
-    row_count: Optional[int] = None,
+    row_count: int | None = None,
 ) -> ConfidenceAssessment:
     """Derive a categorical confidence verdict from real process signals.
 

@@ -127,12 +127,12 @@ def main() -> None:
     print("Running:", " ".join(cmd))
     print()
 
-    result = subprocess.run(cmd)
+    result = subprocess.run(cmd, check=False)
 
     if not args.no_report and results_path.exists():
         print()
         report_cmd = [sys.executable, "eval/report.py", "--input", str(results_path)]
-        subprocess.run(report_cmd)
+        subprocess.run(report_cmd, check=False)
 
     sys.exit(result.returncode)
 

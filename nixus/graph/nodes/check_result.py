@@ -1,11 +1,12 @@
 from datetime import datetime
+
 from nixus.graph.state import SQLAgentState
 
 ROW_FETCH_LIMIT = 1000
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def check_result_node(state: SQLAgentState) -> SQLAgentState:

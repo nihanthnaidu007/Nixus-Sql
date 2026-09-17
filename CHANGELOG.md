@@ -5,6 +5,39 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **API-key authentication (Wave 0).** Every `/api` route now requires `X-API-Key`
+  (from the `API_KEY` env var), except `/api/health`. Fail-closed: with no real key
+  configured the API answers 503 with setup guidance instead of serving. CORS allows
+  the `X-API-Key` header; the React UI sends the key via `NEXT_PUBLIC_API_KEY`
+  (wired from `API_KEY` by compose).
+- **Server-issued session ids (Wave 0).** The API issues a session id on first use
+  and returns it in the response; a client-supplied id this server never issued is
+  answered 404. Session ids double as LangGraph checkpoint thread ids, so one client
+  can no longer attach to another session's checkpoint. Sessions persist in a new
+  `api_sessions` state table (migration 0002).
+- **CI** (`.github/workflows/ci.yml`): ruff lint + the pytest suite on every PR, and
+  a Docker image build from a pristine `git archive` export — the exact failure mode
+  of a fresh clone.
+
+### Fixed
+
+- **Fresh-clone Docker build was broken**: the `Dockerfile` COPYs
+  `requirements.lock`, but `.gitignore`'s `*.lock` pattern excluded it from git.
+  The lockfile (full transitive pin set) is now committed and un-ignored.
+
+### Changed
+
+- **`pytest` runs the offline unit suite by default** (`testpaths = tests eval`).
+  Previously `testpaths = eval` made a bare `pytest` run only the live-server
+  benchmark and never collect `tests/`. The eval suite still skips cleanly when the
+  API/DB are unreachable. The eval harness and benchmark script now send
+  server-issued session ids and honor `NIXUS_API_KEY` for authenticated targets.
+- `ruff` added to dev dependencies; the tree is lint-clean.
+
 ## [3.0.0] — 2026-06-06
 
 The React web UI reaches full functional parity with the retired Streamlit interface,

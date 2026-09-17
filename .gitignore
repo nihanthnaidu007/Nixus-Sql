@@ -55,6 +55,9 @@ ENV/
 # Package lock files
 uv.lock
 *.lock
+# requirements.lock IS tracked (it pins the transitive graph and the Dockerfile
+# COPYs it — a fresh-clone image build fails without it).
+!requirements.lock
 
 # Venv config & cache
 CACHEDIR.TAG

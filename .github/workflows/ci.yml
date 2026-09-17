@@ -1,9 +1,18 @@
-# Wave 1 — CI foundations: ruff lint + the full offline test suite on every PR.
+# CI — union of Wave 1 foundations and Wave 0's build gates, merged at dcd2ed6.
 #
-# The suite is invoked with EXPLICIT paths (`pytest tests/ eval/`), never a bare
-# `pytest`: pytest.ini sets `testpaths = eval`, so a bare run would collect only
-# the eval harness and skip the unit suite entirely — a vacuous green. Explicit
-# paths make collection independent of pytest.ini.
+# Jobs:
+#   lint             — ruff check with the version pinned in requirements-dev.txt.
+#   tests            — the full offline suite, invoked with EXPLICIT paths
+#                      (`pytest tests/ eval/`), so collection never depends on
+#                      pytest.ini's testpaths; plus a pgvector service container
+#                      so the schema-introspection integration tests actually run
+#                      (they self-provision throwaway databases) instead of
+#                      silently skipping as they do without a live Postgres.
+#   docker-build     — Wave 0's pristine-checkout API image build, guarding the
+#                      exact fresh-clone failure mode: the Dockerfile COPYs
+#                      requirements.lock, which must therefore be in git.
+#   docker-build-web — Wave 0's pristine-checkout web image build; the npm build
+#                      inside the image also type-checks the web client.
 #
 # Environment contract (measured against the v3.0.0 tree):
 #   - OPENAI_API_KEY is required at import time (AsyncOpenAI is constructed when
@@ -14,12 +23,15 @@
 #     (tests/graph/test_scope.py, tests/api/test_clarification.py) skip without
 #     it via their _NEEDS_KEY guard.
 #   - The eval harness probes for a live API server and skips cleanly when
-#     absent (88 skips), so including eval/ here costs nothing and keeps the
-#     benchmark harness honest about collecting.
-#   - tests/schema/test_introspect.py provisions throwaway databases through a
-#     real admin connection, so the tests job runs a Postgres service container.
-#     The service credentials are disposable CI fixtures, NOT deployment defaults
-#     — deployment credentials are env-required in docker-compose.yml.
+#     absent, so including eval/ here costs nothing and keeps the benchmark
+#     harness honest about collecting.
+#   - STATE_DATABASE_URL / TARGET_DATABASE_URL point at the service container
+#     (disposable CI fixtures, NOT deployment defaults — deployment credentials
+#     are env-required in docker-compose.yml). Engines are lazy; tests that
+#     need a database connect to the service and self-provision throwaway DBs,
+#     everything else never connects.
+#   - The tests job installs from requirements.lock (what the API image installs,
+#     so CI validates the lock) plus requirements-dev.txt for ruff/pytest.
 name: CI
 
 on:
@@ -67,7 +79,34 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Install locked dependencies + dev tools
+        run: pip install -r requirements.lock -r requirements-dev.txt
       - name: Test suite (unit tests + eval harness, explicit paths)
         run: pytest tests/ eval/
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export the committed tree and verify the lockfile is in git
+        run: |
+          rm -rf /tmp/pristine && mkdir -p /tmp/pristine
+          git archive --format=tar HEAD | tar -x -C /tmp/pristine
+          test -f /tmp/pristine/requirements.lock || {
+            echo "::error::requirements.lock is not committed — the Dockerfile COPY would fail on a fresh clone"
+            exit 1
+          }
+      - name: Build the API image from the pristine tree
+        run: docker build -t nixus-sql:ci /tmp/pristine
+
+  docker-build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export the committed tree
+        run: |
+          rm -rf /tmp/pristine && mkdir -p /tmp/pristine
+          git archive --format=tar HEAD | tar -x -C /tmp/pristine
+      # npm run build inside the image also type-checks the web client.
+      - name: Build the web image from the pristine tree
+        run: docker build -t nixus-web:ci /tmp/pristine/web

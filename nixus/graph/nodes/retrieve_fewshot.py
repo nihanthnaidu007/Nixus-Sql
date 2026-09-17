@@ -1,15 +1,16 @@
-from nixus.config import settings
 from datetime import datetime
+
+from nixus.config import settings
 from nixus.db.fewshot_store import search_fewshots
-from nixus.utils.embeddings import embed_text
 from nixus.graph.state import SQLAgentState
+from nixus.utils.embeddings import embed_text
 
 FEWSHOT_TOP_K = settings.fewshot_retrieval_top_k
 FEWSHOT_THRESHOLD = settings.fewshot_similarity_threshold
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def retrieve_fewshot_node(state: SQLAgentState) -> SQLAgentState:

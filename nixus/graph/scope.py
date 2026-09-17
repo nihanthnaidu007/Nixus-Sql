@@ -18,7 +18,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class ScopeCategory(str, Enum):
@@ -107,7 +106,7 @@ _SHELL_LINE = re.compile(
 )
 
 
-def regex_prefilter(text: str) -> Optional[ScopeCategory]:
+def regex_prefilter(text: str) -> ScopeCategory | None:
     """Return OUT_OF_SCOPE for UNAMBIGUOUS non-questions; None for anything that
     could be natural language (defer to the LLM classifier).
 
@@ -162,7 +161,7 @@ def detect_write_request(text: str) -> bool:
     return bool(_WRITE_LEAD.match(text) or _SQL_WRITE.search(text))
 
 
-def classify_scope(text: str, schema_context: Optional[str] = None) -> Optional[ScopeResult]:
+def classify_scope(text: str, schema_context: str | None = None) -> ScopeResult | None:
     """Deterministic fast-path. Returns a confident ScopeResult for inputs that
     can be decided WITHOUT an LLM (regex junk → OUT_OF_SCOPE, clear write
     request → WRITE_REFUSAL), or None to defer to the LLM classifier.
@@ -209,7 +208,7 @@ Respond ONLY with valid JSON, no markdown:
 "reason": "one short sentence (only if OUT_OF_SCOPE, else \"\")"}}"""
 
 
-def build_classifier_prompt(user_text: str, schema_context: Optional[str] = None) -> str:
+def build_classifier_prompt(user_text: str, schema_context: str | None = None) -> str:
     """Render the classifier prompt, embedding whatever schema context exists."""
     schema = (
         f"AVAILABLE DATA:\n{schema_context}"
@@ -239,7 +238,7 @@ def result_from_llm(category: str, clarification: str = "", reason: str = "") ->
 
 
 # ── Stateless clarification round-trip (Option B) ────────────────────────────
-def build_clarified_query(user_query: str, clarification_context: Optional[dict]) -> str:
+def build_clarified_query(user_query: str, clarification_context: dict | None) -> str:
     """Fold a follow-up's prior clarification context into a single self-contained
     question for re-classification (and, when resolved, for generation).
 
@@ -267,7 +266,7 @@ def build_clarified_query(user_query: str, clarification_context: Optional[dict]
     return "\n".join(parts) if parts else user_query
 
 
-def effective_clarification_round(clarification_round: int, clarification_context: Optional[dict]) -> int:
+def effective_clarification_round(clarification_round: int, clarification_context: dict | None) -> int:
     """The round count the SERVER trusts for termination. Defends against a client
     that mismanages the counter by also counting the clarifications already
     carried in the context — whichever is larger wins."""

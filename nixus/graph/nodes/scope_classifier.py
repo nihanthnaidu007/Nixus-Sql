@@ -7,33 +7,33 @@ fast-path (regex junk / clear write request) short-circuits without an LLM call;
 everything else defers to a single small LLM classification biased toward
 IN_SCOPE / NEEDS_CLARIFICATION.
 """
-from nixus.config import settings
-from dotenv import load_dotenv
-from datetime import datetime
 import logging
+from datetime import datetime
 
+from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 
-from nixus.graph.state import SQLAgentState
+from nixus.config import settings
+from nixus.db.schema_store import list_schema_rows
 from nixus.graph.scope import (
-    ScopeCategory,
-    ScopeResult,
-    classify_scope,
-    build_classifier_prompt,
-    result_from_llm,
-    build_clarified_query,
-    effective_clarification_round,
-    outcome_for,
-    OUT_OF_SCOPE_MESSAGE,
-    CLARIFY_FALLBACK,
     AMBIGUOUS_TERMINATION_MESSAGE,
+    CLARIFY_FALLBACK,
+    OUT_OF_SCOPE_MESSAGE,
     OUTCOME_ANSWERED,
     OUTCOME_NEEDS_CLARIFICATION,
     OUTCOME_REFUSED_AMBIGUOUS,
+    ScopeCategory,
+    ScopeResult,
+    build_clarified_query,
+    build_classifier_prompt,
+    classify_scope,
+    effective_clarification_round,
+    outcome_for,
+    result_from_llm,
 )
+from nixus.graph.state import SQLAgentState
 from nixus.utils.retry import llm_retry
-from nixus.db.schema_store import list_schema_rows
 
 load_dotenv()
 
@@ -54,7 +54,7 @@ class ScopeClassification(BaseModel):
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def _schema_summary() -> str:
@@ -65,7 +65,7 @@ async def _schema_summary() -> str:
         rows = await list_schema_rows()
         if rows:
             return "Tables available: " + ", ".join(r["table_name"] for r in rows)
-    except Exception as e:  # noqa: BLE001 — best-effort context only
+    except Exception as e:  # best-effort context only
         logger.debug("scope classifier schema summary unavailable: %s", e)
     return ""
 
@@ -90,7 +90,7 @@ async def classify_query(text: str, schema_context: str = "") -> ScopeResult:
     try:
         raw = await _call_llm(build_classifier_prompt(text, schema))
         return result_from_llm(raw.category, raw.clarification, raw.reason)
-    except Exception as e:  # noqa: BLE001 — never refuse on a transient failure
+    except Exception as e:  # never refuse on a transient failure
         logger.warning("scope classifier LLM failed (%s) — defaulting IN_SCOPE", e)
         return ScopeResult(ScopeCategory.IN_SCOPE)
 

@@ -1,20 +1,22 @@
 import json
 import re
-from nixus.config import settings
-import pandas as pd
 from datetime import datetime
+
+import pandas as pd
+
+from nixus.config import settings
 from nixus.graph.state import SQLAgentState
 
 try:
-    import plotly.express as px
     import numpy as np
+    import plotly.express as px
     HAS_PLOTLY = True
 except ImportError:
     HAS_PLOTLY = False
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 def _is_numeric(val) -> bool:
@@ -300,20 +302,20 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
     if chart_type != "none":
         try:
             if chart_type == "pie":
-                kw = dict(names=x_col, values=y_col)
+                kw = {"names": x_col, "values": y_col}
             else:
-                kw = dict(x=x_col, y=y_col)
+                kw = {"x": x_col, "y": y_col}
             if color_col and color_col in df.columns and chart_type != "pie":
                 kw["color"] = color_col
             fig = getattr(px, chart_type)(df, **kw, title=reasoning)
             fig.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#e0f4ff", family="Outfit"),
-                title_font=dict(color="#00d4ff", size=14),
-                legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,212,255,0.2)"),
-                xaxis=dict(gridcolor="rgba(0,212,255,0.08)", linecolor="rgba(0,212,255,0.2)", tickfont=dict(color="#7ba3c0")),
-                yaxis=dict(gridcolor="rgba(0,212,255,0.08)", linecolor="rgba(0,212,255,0.2)", tickfont=dict(color="#7ba3c0")),
-                margin=dict(l=20, r=20, t=40, b=20),
+                font={"color": "#e0f4ff", "family": "Outfit"},
+                title_font={"color": "#00d4ff", "size": 14},
+                legend={"bgcolor": "rgba(0,0,0,0)", "bordercolor": "rgba(0,212,255,0.2)"},
+                xaxis={"gridcolor": "rgba(0,212,255,0.08)", "linecolor": "rgba(0,212,255,0.2)", "tickfont": {"color": "#7ba3c0"}},
+                yaxis={"gridcolor": "rgba(0,212,255,0.08)", "linecolor": "rgba(0,212,255,0.2)", "tickfont": {"color": "#7ba3c0"}},
+                margin={"l": 20, "r": 20, "t": 40, "b": 20},
             )
             # A single accent colour is only forced for SINGLE-series line/bar; when
             # color_col splits the figure into multiple series, plotly's own per-series

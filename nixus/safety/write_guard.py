@@ -1,6 +1,5 @@
 import re
 
-
 # These patterns match the start of any SQL statement that modifies data or schema.
 # They are intentionally conservative — false positives are safe, false negatives are not.
 #

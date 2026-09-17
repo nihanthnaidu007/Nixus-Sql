@@ -31,11 +31,12 @@ generated result has fewer columns than gold, it cannot match.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from itertools import permutations
-from typing import Any, Optional, Sequence
+from typing import Any
 
 # Cap on generated-column arity we will search mappings over. Real SELECTs are
 # narrow; this only bounds the permutation search so a pathologically wide result
@@ -49,7 +50,7 @@ class EquivalenceResult:
     reason: str = ""
     gold_row_count: int = 0
     gen_row_count: int = 0
-    first_mismatch: Optional[dict] = None
+    first_mismatch: dict | None = None
 
 
 # ── value normalization ─────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ def _norm_number(v: Any) -> Any:
     return i if f == i else round(f, 6)
 
 
-def _parse_isoish(s: str) -> Optional[datetime]:
+def _parse_isoish(s: str) -> datetime | None:
     """Parse common Postgres/JSON timestamp spellings; None if not date-like.
 
     Handles '2024-01-01', '2024-01-01 00:00:00', '2024-01-01T00:00:00' (and a
@@ -79,7 +80,10 @@ def _parse_isoish(s: str) -> Optional[datetime]:
     cand = t.replace("T", " ").rstrip("Z").strip()
     for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
-            return datetime.strptime(cand, fmt)
+            # Deliberately naive: _norm_value renders datetime OBJECTS (from the DB
+            # driver) without tz too — one side aware and the other naive would
+            # never compare equal, so both sides must stay naive.
+            return datetime.strptime(cand, fmt)  # noqa: DTZ007
         except ValueError:
             continue
     return None
@@ -93,7 +97,7 @@ def _norm_value(v: Any) -> Any:
     if isinstance(v, (int, float, Decimal)):
         return _norm_number(v)
     if isinstance(v, (datetime, date)):
-        dt = v if isinstance(v, datetime) else datetime(v.year, v.month, v.day)
+        dt = v if isinstance(v, datetime) else datetime(v.year, v.month, v.day)  # noqa: DTZ001 — naive by contract
         return "dt:" + dt.isoformat()
     s = str(v).strip()
     dt = _parse_isoish(s)
@@ -209,8 +213,8 @@ def results_equivalent(
             )
 
     # No mapping worked — surface a representative mismatch for debugging.
-    sample_gold = sorted(gold, key=_sort_key)[0] if not ordered else gold[0]
-    sample_gen = sorted(gen, key=_sort_key)[0] if not ordered else gen[0]
+    sample_gold = min(gold, key=_sort_key) if not ordered else gold[0]
+    sample_gen = min(gen, key=_sort_key) if not ordered else gen[0]
     return EquivalenceResult(
         equivalent=False,
         reason="no consistent column mapping makes the rows match",

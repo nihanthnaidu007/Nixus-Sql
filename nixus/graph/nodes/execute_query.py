@@ -1,8 +1,11 @@
-from nixus.config import settings
 import time
 from datetime import datetime
+
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+
+from nixus.config import settings
+
 # The GENERATED SQL runs against the user's data → TARGET database, through the
 # read-only role. NIXUS never writes here; Postgres rejects any write at this
 # connection. All NIXUS bookkeeping stays on the state database.
@@ -14,7 +17,7 @@ QUERY_TIMEOUT_MS = settings.query_timeout_ms
 
 
 def now():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().astimezone().strftime("%H:%M:%S")
 
 
 async def execute_query_node(state: SQLAgentState) -> SQLAgentState:

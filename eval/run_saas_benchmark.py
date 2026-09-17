@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 import sys
 import time
-import uuid
 from pathlib import Path
 
 # Allow `python eval/run_saas_benchmark.py` to import the eval package.
@@ -33,9 +32,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import httpx
 
-from eval.conftest import BASE_URL, run_gold_sql, extract_rows
-from eval.saas_gold import ANSWERABLE, SCOPE
+from eval.conftest import BASE_URL, auth_headers, extract_rows, run_gold_sql
 from eval.result_equivalence import results_equivalent
+from eval.saas_gold import ANSWERABLE, SCOPE
 
 RESULTS_PATH = Path("eval/saas_benchmark_results.json")
 
@@ -47,7 +46,7 @@ def _run_query_timed(client: httpx.Client, question: str) -> tuple[dict, float]:
     t0 = time.monotonic()
     resp = client.post(
         "/api/v1/run",
-        json={"user_query": question, "session_id": str(uuid.uuid4())},
+        json={"user_query": question, "session_id": ""},
     )
     ms = (time.monotonic() - t0) * 1000
     resp.raise_for_status()
@@ -136,7 +135,7 @@ def run() -> dict:
     scope_results: list[dict] = []
     latencies: list[float] = []
 
-    with httpx.Client(base_url=BASE_URL, timeout=120.0) as client:
+    with httpx.Client(base_url=BASE_URL, timeout=120.0, headers=auth_headers()) as client:
         for case in ANSWERABLE:
             r = score_answerable_case(client, case)
             answerable_results.append(r)
@@ -202,7 +201,6 @@ def main() -> None:
           f"hard {bt['hard']['passed']}/{bt['hard']['total']})")
     print(f"Scope:      {s['scope']['passed']}/{s['scope']['total']}")
     print(f"Latency (reported): p50={s['latency_ms']['p50']}ms p95={s['latency_ms']['p95']}ms")
-    failing = [r["id"] for r in report["results"] if not r["passed"]]
     fail_with_tier = [
         f"{r['id']}({r.get('tier', 'scope')})"
         for r in report["results"] if not r["passed"]

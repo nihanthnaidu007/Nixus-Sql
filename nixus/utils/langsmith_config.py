@@ -1,10 +1,13 @@
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import logging
-from nixus.config import settings
 import time
+
 from langchain_core.runnables.config import RunnableConfig
+
+from nixus.config import settings
 
 TRACING_ENABLED = settings.tracing_enabled
 LANGSMITH_PROJECT = settings.langchain_project

@@ -73,11 +73,11 @@ def analytics_db_url():
             await admin.execute(f'CREATE DATABASE "{TEST_DB}"')
         finally:
             await admin.close()
-        url = str(
-            make_url(str(admin_base_url)).set(
-                drivername="postgresql+asyncpg", database=TEST_DB
-            )
-        )
+        # render_as_string(hide_password=False): str(url) MASKS the password as
+        # literal '***', so the runner's DSN fails scram auth (CI 2026-09-18).
+        url = admin_base_url.set(
+            drivername="postgresql+asyncpg", database=TEST_DB
+        ).render_as_string(hide_password=False)
         # The FULL sequence, through the real runner, against the throwaway DB.
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(runner.settings, "state_database_url", url)

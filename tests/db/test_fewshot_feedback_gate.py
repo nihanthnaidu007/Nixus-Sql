@@ -93,7 +93,11 @@ async def _apply_through_0004() -> None:
 def _test_db_url() -> str | None:
     if _ADMIN_URL is None:
         return None
-    return str(_ADMIN_URL.set(drivername="postgresql+asyncpg", database=TEST_DB))
+    # render_as_string(hide_password=False): str(url) MASKS the password as
+    # literal '***', so the runner's DSN fails scram auth (CI 2026-09-18).
+    return _ADMIN_URL.set(
+        drivername="postgresql+asyncpg", database=TEST_DB
+    ).render_as_string(hide_password=False)
 
 
 def _vec() -> str:

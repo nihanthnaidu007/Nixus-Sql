@@ -263,7 +263,7 @@ export interface NormalizedResult {
   cacheSimilarity: number | null; // similarity ONLY when hit (0.0 on a miss → null)
   executionTimeMs: number | null; // live runs only; null when served from cache
   traceUrl: string | null; // LangSmith success-path trace; populated on the /stream path
-                           // when tracing is enabled, null when tracing is off (default)
+  // when tracing is enabled, null when tracing is off (default)
   // The backend's chart decision, carried through verbatim for ChartView to render.
   chartConfig: ChartConfig | null;
   // The pre-execution EXPLAIN estimate (null when the preview degraded or never ran).
@@ -283,6 +283,17 @@ export interface NormalizedResult {
   errorText: string;
   // The full raw payload, for debugging / future phases.
   raw: NixusResponse;
+}
+
+/** Format a FastAPI error body's `detail` for a human. Pydantic 422s arrive as
+ *  an ARRAY of {loc, msg} objects — String() would render "[object Object]" —
+ *  so pull the first validation message out. Plain-string details pass through. */
+function formatErrorDetail(detail: unknown): string | null {
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: unknown } | undefined;
+    return typeof first?.msg === "string" ? first.msg : null;
+  }
+  return typeof detail === "string" ? detail : null;
 }
 
 export class ApiError extends Error {
@@ -408,7 +419,8 @@ export async function runEditedSql(
     try {
       const body = await res.json();
       if (body?.error) msg = String(body.error);
-      if (body?.detail) msg += ` — ${String(body.detail)}`;
+      const detail = body?.detail ? formatErrorDetail(body.detail) : null;
+      if (detail) msg += ` — ${detail}`;
     } catch {
       /* no JSON body — keep the status line */
     }
@@ -421,7 +433,8 @@ export async function runEditedSql(
   // (unknown column/table, statement timeout) comes back with the DB error under
   // execution_result. Pull it up so the user sees the real reason, not an empty table.
   const exec = data.execution_result;
-  const execError = exec && exec.success === false ? exec.error ?? null : null;
+  const execError =
+    exec && exec.success === false ? (exec.error ?? null) : null;
   const error = data.error ?? execError ?? null;
   if (error) return { ok: false, result: null, error };
 
@@ -593,7 +606,8 @@ export async function runQueryStreaming(
 
   if (streamError) throw new ApiError(streamError);
   // A stream that closed without a terminal `complete` is unusable → fall back.
-  if (!finalResult) throw new ApiError("stream ended without a terminal result");
+  if (!finalResult)
+    throw new ApiError("stream ended without a terminal result");
   return finalResult;
 }
 
@@ -603,7 +617,10 @@ export async function runQueryStreaming(
 function nextSseFrame(buf: string): { frame: string; rest: string } | null {
   const m = buf.match(/\r?\n\r?\n/);
   if (!m || m.index === undefined) return null;
-  return { frame: buf.slice(0, m.index), rest: buf.slice(m.index + m[0].length) };
+  return {
+    frame: buf.slice(0, m.index),
+    rest: buf.slice(m.index + m[0].length),
+  };
 }
 
 /** Parse one SSE frame's lines into { event, data }. Concatenates multiple `data:`
@@ -663,7 +680,10 @@ function toStreamProgress(d: Record<string, unknown>): StreamProgress {
 /** Fold a StreamProgress event into the accumulated LiveProgress the running view
  *  renders. `completed_nodes` is cumulative on the wire, so it replaces; partial
  *  signals (intent/cache/entities) latch as they first appear. */
-export function foldProgress(prev: LiveProgress, p: StreamProgress): LiveProgress {
+export function foldProgress(
+  prev: LiveProgress,
+  p: StreamProgress,
+): LiveProgress {
   return {
     completed: p.completedNodes.length ? p.completedNodes : prev.completed,
     servedFromCache: prev.servedFromCache || p.servedFromCache,
@@ -747,9 +767,13 @@ export function normalize(raw: NixusResponse): NormalizedResult {
       typeof raw.confidence_score === "number" ? raw.confidence_score : null,
     cacheHit,
     cacheSimilarity:
-      cacheHit && typeof cache?.similarity === "number" ? cache.similarity : null,
+      cacheHit && typeof cache?.similarity === "number"
+        ? cache.similarity
+        : null,
     executionTimeMs:
-      typeof exec?.execution_time_ms === "number" ? exec.execution_time_ms : null,
+      typeof exec?.execution_time_ms === "number"
+        ? exec.execution_time_ms
+        : null,
     traceUrl: raw.trace_url ?? null,
     chartConfig: raw.chart_config ?? null,
     // The EXPLAIN preview, validated to its shape — anything malformed degrades
@@ -831,7 +855,8 @@ async function fetchStatus<T>(path: string): Promise<T | null> {
 }
 
 export const fetchHealth = () => fetchStatus<HealthStatus>("/api/v1/health");
-export const fetchCacheStats = () => fetchStatus<CacheStats>("/api/v1/cache-stats");
+export const fetchCacheStats = () =>
+  fetchStatus<CacheStats>("/api/v1/cache-stats");
 export const fetchFewshotStats = () =>
   fetchStatus<FewshotStats>("/api/v1/fewshot-stats");
 
@@ -846,6 +871,9 @@ export const fetchFewshotStats = () =>
  *  payload (and any UI built on it) reports caps and estimates ONLY — NIXUS
  *  has no dollar/token spend ceiling, and copy must never imply one. */
 export interface GuardrailsManifest {
+  /** W2 N1 — the active target's database name, or null when unset. Static
+   *  read of the settings URL's path segment; never credentials or host. */
+  target_database: string | null;
   row_cap: number;
   query_timeout_ms: number;
   max_correction_attempts: number;
@@ -976,7 +1004,11 @@ export async function fetchSavedQueries(tag?: string): Promise<SavedQuery[]> {
   const res = await fetch(`${API_BASE_URL}/api/v1/saved-queries${qs}`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw new ApiError(`Could not load saved queries (${res.status})`, res.status);
+  if (!res.ok)
+    throw new ApiError(
+      `Could not load saved queries (${res.status})`,
+      res.status,
+    );
   const body = await res.json();
   return Array.isArray(body?.items) ? (body.items as SavedQuery[]) : [];
 }
@@ -987,6 +1019,9 @@ export async function createSavedQuery(input: {
   generated_sql: string;
   description?: string;
   tags?: string[];
+  /** W2 N5 — the chart-type override persists with the saved query via the
+   *  existing parameters JSON (no schema change); `chart_override` is its key. */
+  parameters?: Record<string, unknown>;
 }): Promise<SavedQuery> {
   const res = await fetch(`${API_BASE_URL}/api/v1/saved-queries`, {
     method: "POST",
@@ -998,7 +1033,10 @@ export async function createSavedQuery(input: {
     try {
       const body = await res.json();
       if (body?.detail?.error) msg = String(body.detail.error);
-      else if (body?.detail) msg = String(body.detail);
+      else {
+        const detail = body?.detail ? formatErrorDetail(body.detail) : null;
+        if (detail) msg = detail;
+      }
     } catch {
       /* keep the status line */
     }
@@ -1013,7 +1051,10 @@ export async function deleteSavedQuery(id: number): Promise<void> {
     headers: authHeaders(),
   });
   if (!res.ok && res.status !== 404) {
-    throw new ApiError(`Could not delete the saved query (${res.status})`, res.status);
+    throw new ApiError(
+      `Could not delete the saved query (${res.status})`,
+      res.status,
+    );
   }
 }
 
@@ -1065,9 +1106,12 @@ export async function fetchQueryHistory(
   if (filters.limit != null) params.set("limit", String(filters.limit));
   if (filters.offset != null) params.set("offset", String(filters.offset));
   const qs = params.toString();
-  const res = await fetch(`${API_BASE_URL}/api/v1/history${qs ? `?${qs}` : ""}`, {
-    headers: authHeaders(),
-  });
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/history${qs ? `?${qs}` : ""}`,
+    {
+      headers: authHeaders(),
+    },
+  );
   if (!res.ok) {
     let msg = `Could not load history (${res.status})`;
     try {
@@ -1138,11 +1182,20 @@ export async function fetchAnalyticsSummary(): Promise<AnalyticsSummary> {
   return {
     ...body,
     totals: body?.totals ?? {
-      runs: 0, answered: 0, refused: 0, needs_clarification: 0, errors: 0,
+      runs: 0,
+      answered: 0,
+      refused: 0,
+      needs_clarification: 0,
+      errors: 0,
     },
     rates: body?.rates ?? {
-      answered_rate: 0, refusal_rate: 0, needs_clarification_rate: 0,
-      error_rate: 0, accepted_feedback: 0, rejected_feedback: 0, accept_rate: 0,
+      answered_rate: 0,
+      refusal_rate: 0,
+      needs_clarification_rate: 0,
+      error_rate: 0,
+      accepted_feedback: 0,
+      rejected_feedback: 0,
+      accept_rate: 0,
     },
     latency_ms: body?.latency_ms ?? { avg: null, p95: null, max: null },
     volume: Array.isArray(body?.volume) ? body.volume : [],
@@ -1165,7 +1218,9 @@ export async function postHistoryFeedback(
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify(
-        note && note.trim().length > 0 ? { verdict, note: note.trim() } : { verdict },
+        note && note.trim().length > 0
+          ? { verdict, note: note.trim() }
+          : { verdict },
       ),
     },
   );

@@ -13,6 +13,8 @@ neither this payload nor any UI copy built on it may claim otherwise.
 """
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from fastapi import APIRouter
 
 from nixus.config import settings
@@ -41,9 +43,32 @@ _MODELS = {
 }
 
 
+def parse_target_database(url: str | None) -> str | None:
+    """The target's DATABASE NAME — the human-facing identity (W2 N1).
+
+    The path segment of the connection URL, and nothing else: credentials and
+    host never leave the settings module (the manifest names WHICH database the
+    instance queries; it does not describe the network it sits on). None when
+    unset or path-less — the UI omits the badge rather than guess.
+    """
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        # A malformed URL must never break the static manifest.
+        return None
+    # A database name only counts when the URL actually points at a host —
+    # urlparse is lax and will happily parse free text as a path.
+    if not parsed.netloc:
+        return None
+    return parsed.path.lstrip("/").strip() or None
+
+
 @router.get("")
 async def guardrails_manifest() -> dict:
     return {
+        "target_database": parse_target_database(settings.target_database_url),
         "row_cap": ROW_FETCH_LIMIT,
         "query_timeout_ms": settings.query_timeout_ms,
         "max_correction_attempts": settings.max_correction_attempts,

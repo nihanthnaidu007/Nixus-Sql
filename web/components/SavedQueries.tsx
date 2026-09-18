@@ -19,10 +19,34 @@ import {
   fetchSavedQueries,
   type SavedQuery,
 } from "@/lib/api";
+import type { ChartOverride } from "./ResultView";
 
 export interface SaveDraft {
   naturalLanguage: string;
   generatedSql: string;
+  /** W2 N5 — the chart-type override active when this draft was made. When
+   *  set (non-auto), it persists with the saved query via the EXISTING
+   *  parameters JSON — no schema change — so re-running reproduces the chart. */
+  chartOverride?: ChartOverride;
+}
+
+/** The parameters key the chart override rides under (W2 N5). */
+const CHART_OVERRIDE_KEY = "chart_override";
+const PERSISTABLE_OVERRIDES: readonly ChartOverride[] = [
+  "bar",
+  "line",
+  "pie",
+  "scatter",
+];
+
+/** A persisted override from a saved query's parameters JSON, or null. Only
+ *  the four concrete chart types count — "auto" is never persisted. */
+export function savedChartOverride(q: SavedQuery): ChartOverride | null {
+  const value = q.parameters?.[CHART_OVERRIDE_KEY];
+  return typeof value === "string" &&
+    (PERSISTABLE_OVERRIDES as readonly string[]).includes(value)
+    ? (value as ChartOverride)
+    : null;
 }
 
 function formatDate(iso: string | null): string | null {
@@ -67,6 +91,11 @@ function SaveForm({
         generated_sql: draft.generatedSql,
         description: description.trim() || undefined,
         tags: tagList.length ? tagList : undefined,
+        // W2 N5 — persist the chart override when one is active, so the saved
+        // query reproduces the chart it was saved with.
+        parameters: draft.chartOverride
+          ? { [CHART_OVERRIDE_KEY]: draft.chartOverride }
+          : undefined,
       });
       onSaved(saved);
     } catch (e) {
@@ -134,8 +163,9 @@ export function SavedQueries({
 }: {
   /** Present only when an ANSWERED result is on screen — enables "save this". */
   draft: SaveDraft | null;
-  /** Runs a saved query's natural-language question through the main pipeline. */
-  onRun: (naturalLanguage: string) => void;
+  /** Runs a saved query's natural-language question through the main pipeline.
+   *  A persisted chart override (W2 N5) rides along to seed the new result. */
+  onRun: (naturalLanguage: string, chartOverride?: ChartOverride) => void;
 }) {
   const [items, setItems] = useState<SavedQuery[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -223,6 +253,14 @@ export function SavedQueries({
                     ))}
                   </span>
                 )}
+                {/* W2 N5 — the chart the saved query reproduces on re-run. */}
+                {savedChartOverride(q) && (
+                  <span className="saved-tags">
+                    <span className="saved-tag saved-tag-chart">
+                      chart · {savedChartOverride(q)}
+                    </span>
+                  </span>
+                )}
                 {q.last_run_at && (
                   <span className="saved-lastrun">
                     last run {formatDate(q.last_run_at)}
@@ -233,7 +271,13 @@ export function SavedQueries({
                 <button
                   type="button"
                   className="saved-btn"
-                  onClick={() => onRun(q.natural_language)}
+                  onClick={() => {
+                    // One argument when no override is persisted — the panel
+                    // callback stays a plain re-ask in the common case.
+                    const override = savedChartOverride(q);
+                    if (override) onRun(q.natural_language, override);
+                    else onRun(q.natural_language);
+                  }}
                   disabled={deletingId !== null}
                 >
                   Run

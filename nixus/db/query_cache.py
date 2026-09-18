@@ -149,6 +149,8 @@ async def get_cache_stats() -> dict:
             FROM query_cache
         """))
         r = row.fetchone()
+        # A bare aggregate (COUNT/SUM, no GROUP BY) always returns exactly one row.
+        assert r is not None
     entries = r[0] or 0
     hits = int(r[1] or 0)
     total_requests = entries + hits

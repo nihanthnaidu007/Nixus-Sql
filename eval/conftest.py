@@ -202,7 +202,7 @@ def run_gold_sql(sql: str) -> list:
         )
     with sync_target_engine.connect() as conn:
         result = conn.execute(text(sql))
-        return result.fetchall()
+        return list(result.fetchall())
 
 
 def _is_numeric_val(v) -> bool:

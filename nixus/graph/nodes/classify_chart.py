@@ -132,8 +132,8 @@ def _fig_to_json(fig) -> str:
 
 async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "classify_chart"
-    if state.get("served_from_cache") and state.get("cache_result"):
-        cr = state["cache_result"]
+    cr = state.get("cache_result")
+    if state.get("served_from_cache") and cr:
         rows = cr.get("result_preview") or []
         columns = list(rows[0].keys()) if rows else []
         # The cache stores only a 5-row preview but the true total separately; the

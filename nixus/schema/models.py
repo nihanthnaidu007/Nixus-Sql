@@ -50,7 +50,11 @@ class ForeignKey(BaseModel):
 class Table(BaseModel):
     # Schema-qualified identity: two schemas may share a table name, so (schema,
     # name) together identify a table.
-    schema: str
+    # `schema` shadows pydantic-v1's deprecated BaseModel.schema() method, which
+    # is what mypy's assignment error sees; pydantic v2 fully supports a field
+    # of this name (the old method is gone at runtime), and renaming the field
+    # would churn the whole introspection/embedding API for zero behavior gain.
+    schema: str  # type: ignore[assignment]
     name: str
     columns: list[Column]               # in ordinal position order, NONE dropped
     primary_key: list[str] = Field(default_factory=list)  # ordered, composite-aware

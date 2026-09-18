@@ -30,3 +30,33 @@ include = ["nixus*"]
 # present it takes precedence over this file entirely — a [tool.ruff] block
 # here was silently shadowed, so it was removed; keep lint config in
 # ruff.toml only.
+
+# ---------------------------------------------------------------------------
+# Mypy — type gate (post-audit remediation, phase-2 audit finding G2).
+#
+# The audit measured 70 errors in 30 files on b083dd0 (62 of them pre-existing
+# at the pre-phase-2 base d0de89a); all 70 are fixed as part of adopting the
+# gate, and CI runs `mypy .` (job: typecheck) to keep it at zero. The bar is
+# deliberately PRAGMATIC: default mypy strictness (no --strict flags), so the
+# gate catches real shape errors (Optional misuse, TypedDict shape drift,
+# missing stubs) without drowning contributors in annotation churn.
+#
+# Exclusions are per-library and documented below — never blanket
+# (no global ignore_missing_imports, no per-module ignore_errors).
+# ---------------------------------------------------------------------------
+[tool.mypy]
+# langchain/pydantic chat models (ChatAnthropic et al.) are pydantic models
+# whose constructor kwargs mypy can only see through the plugin.
+plugins = ["pydantic.mypy"]
+# Keep any `# type: ignore[code]` honest: an ignore that no longer fires is
+# itself an error, so stale suppressions can't accumulate.
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+# asyncpg ships no py.typed marker and no types-asyncpg stub package exists;
+# plotly is the same (no stubs, no py.typed). Every call site already funnels
+# these through thin, hand-typed helpers (pool creation in graph.py, chart
+# serialization in classify_chart.py), so skipping their bodies loses nothing.
+module = ["asyncpg", "asyncpg.*", "plotly", "plotly.*"]
+ignore_missing_imports = true

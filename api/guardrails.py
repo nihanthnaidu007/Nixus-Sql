@@ -16,7 +16,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from nixus.config import settings
-from nixus.graph.nodes.check_result import ROW_FETCH_LIMIT
+
+# Single source of truth: ROW_FETCH_LIMIT lives at the enforcement site
+# (execute_query), the same convention export_service.py uses — importing the
+# check_result.py copy would let the manifest's row cap silently drift from
+# the enforced one.
+from nixus.graph.nodes.execute_query import ROW_FETCH_LIMIT
 from nixus.graph.scope import CLARIFICATION_ROUND_CAP
 
 router = APIRouter(prefix="/guardrails", tags=["guardrails"])

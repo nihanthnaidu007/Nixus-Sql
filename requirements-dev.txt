@@ -8,3 +8,13 @@ pytest-timeout==2.4.0
 pytest-json-report==1.5.0
 httpx==0.28.1
 ruff==0.16.8
+
+# Type gate (see [tool.mypy] in pyproject.toml). mypy is pinned to the version
+# the CI typecheck job runs; the types-* / *-stubs packages supply the library
+# stubs for PyYAML, psycopg2, pandas, and openpyxl (the four third-party
+# imports that ship no py.typed marker of their own).
+mypy==2.3.1
+types-PyYAML==6.0.12.20260906
+types-psycopg2==2.9.21.20260911
+pandas-stubs==3.0.5.260914
+types-openpyxl==3.1.5.20260827

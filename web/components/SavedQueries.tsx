@@ -6,9 +6,10 @@
  * Lists the saved queries the backend stores in the STATE database, runs one
  * by sending its saved natural-language question back through the normal
  * pipeline (never the stored SQL — the backend enforces this and the UI
- * reflects it), deletes with an inline confirm, and saves the CURRENT result
- * (question + SQL) with a name and optional tags. Duplicate names, rejected
- * saves, and network failures surface as readable inline messages.
+ * reflects it), deletes immediately on click (no confirmation step — a deleted
+ * query can be recreated by saving the result again), and saves the CURRENT
+ * result (question + SQL) with a name and optional tags. Duplicate names,
+ * rejected saves, and network failures surface as readable inline messages.
  */
 
 import { useCallback, useEffect, useState } from "react";

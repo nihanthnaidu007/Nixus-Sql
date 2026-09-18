@@ -22,7 +22,11 @@ def now():
 
 async def execute_query_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "execute_query"
-    sql = state["validation_result"]["normalized_sql"]
+    validation = state["validation_result"]
+    # Every path into this node runs validate_syntax first, so validation_result
+    # (with normalized_sql) is always set — the assert pins that for mypy.
+    assert validation is not None, "execute_query before validate_syntax: no validation_result"
+    sql = validation["normalized_sql"]
     start = time.monotonic()
 
     try:

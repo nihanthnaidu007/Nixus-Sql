@@ -33,6 +33,9 @@ _ADMIN_URL = make_url(settings.state_url) if settings.state_url else None
 
 
 def _pg_kwargs(database: str) -> dict:
+    # _ADMIN_URL is None only when STATE_DATABASE_URL is unset; every caller
+    # here only runs when the state DB is reachable, so the assert always holds.
+    assert _ADMIN_URL is not None
     return {
         "host": _ADMIN_URL.host,
         "port": _ADMIN_URL.port,
@@ -83,6 +86,7 @@ async def _provision_and_introspect() -> IntrospectedSchema:
             await work.close()
 
         # Introspect through a real AsyncEngine — the production code path.
+        assert _ADMIN_URL is not None
         engine = create_async_engine(
             _ADMIN_URL.set(drivername="postgresql+asyncpg", database=TEST_DB)
         )

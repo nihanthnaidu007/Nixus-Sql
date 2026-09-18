@@ -122,7 +122,9 @@ def test_grouped_row_count_is_a_claim_not_a_value():
 
 def test_empty_and_none_explanations_are_consistent():
     assert explanation_matches_result("", ROWS, COLUMNS, 2).consistent
-    assert explanation_matches_result(None, ROWS, COLUMNS, 2).consistent  # type: ignore[arg-type]
+    # None is a runtime-valid input (treated as ""); mypy skips unannotated
+    # test bodies, so no ignore comment is needed here.
+    assert explanation_matches_result(None, ROWS, COLUMNS, 2).consistent
 
 
 # --- the deterministic fallback is faithful by construction -------------------

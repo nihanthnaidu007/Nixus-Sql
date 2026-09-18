@@ -1,6 +1,7 @@
 from typing import TypedDict
 
 from pydantic import BaseModel
+from typing_extensions import NotRequired
 
 
 class SchemaTable(BaseModel):
@@ -100,10 +101,10 @@ class SQLAgentState(TypedDict):
     fewshot_context: str
     generated_sql: str
     validation_result: dict | None
-    grounding_result: dict | None
+    grounding_result: NotRequired[dict | None]
     # Pre-execution EXPLAIN estimate (guardrail_preview_node): {estimated_rows, plan_cost}.
     # None when the preview degraded or never ran (cache hit) — absence is honest.
-    guardrail_preview: dict | None
+    guardrail_preview: NotRequired[dict | None]
     execution_result: dict | None
     result_quality: dict | None
     correction_attempts: int
@@ -113,9 +114,12 @@ class SQLAgentState(TypedDict):
     confidence_score: float
     # Categorical confidence (5.2): the verdict plus its legible reasoning, so the
     # API/UI can show WHY confidence is what it is rather than a bare number.
-    confidence: str | None
-    confidence_reasons: list
-    confidence_signals: dict
+    # These five keys are POPULATED BY THE GRAPH MID-RUN (verify_grounding,
+    # guardrail_preview, explain_result), so initial states legitimately omit
+    # them — hence NotRequired rather than "explicitly None" at every construction.
+    confidence: NotRequired[str | None]
+    confidence_reasons: NotRequired[list]
+    confidence_signals: NotRequired[dict]
     current_node: str
     completed_nodes: list
     is_complete: bool

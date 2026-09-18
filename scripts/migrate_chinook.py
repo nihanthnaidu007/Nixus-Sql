@@ -44,12 +44,14 @@ from nixus.db.schema_init import CHINOOK_DDL
 # Writable OWNER connection to the TARGET database. The app never uses this; only
 # this one-time seed does. Prefer TARGET_ADMIN_DATABASE_URL; fall back to the
 # legacy DATABASE_URL so existing single-DB setups still work.
-TARGET_ADMIN_URL = settings.target_admin_url or settings.database_url
-if not TARGET_ADMIN_URL:
+_admin_url = settings.target_admin_url or settings.database_url
+if not _admin_url:
     raise RuntimeError(
         "Set TARGET_ADMIN_DATABASE_URL (the writable owner connection to the "
         "target database) to seed Chinook. See .env.example."
     )
+# str-annotated: the guard above is what makes this non-optional for mypy.
+TARGET_ADMIN_URL: str = _admin_url
 
 CHINOOK_JSON_DEFAULT = (
     "https://raw.githubusercontent.com/lerocha/chinook-database/"

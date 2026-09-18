@@ -73,7 +73,13 @@ def _embedded_columns(columns_json: str) -> set[str]:
         cols = json.loads(columns_json) or []
     except Exception:
         return set()
-    return {c.get("name") for c in cols if isinstance(c, dict) and c.get("name")}
+    # Truthy AND a real string — the declared set[str] contract (column names
+    # come from column dicts we produce; anything else was never a valid name).
+    names: set[str] = set()
+    for c in cols:
+        if isinstance(c, dict) and c.get("name") and isinstance(c["name"], str):
+            names.add(c["name"])
+    return names
 
 
 async def _manifest_drift() -> tuple[str | None, str | None]:

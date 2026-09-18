@@ -100,9 +100,9 @@ def _norm_value(v: Any) -> Any:
         dt = v if isinstance(v, datetime) else datetime(v.year, v.month, v.day)  # noqa: DTZ001 — naive by contract
         return "dt:" + dt.isoformat()
     s = str(v).strip()
-    dt = _parse_isoish(s)
-    if dt is not None:
-        return "dt:" + dt.isoformat()
+    parsed = _parse_isoish(s)
+    if parsed is not None:
+        return "dt:" + parsed.isoformat()
     return s
 
 

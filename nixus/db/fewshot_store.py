@@ -128,6 +128,8 @@ async def get_fewshot_stats() -> dict:
             FROM fewshot_examples
         """))
         r = row.fetchone()
+        # A bare aggregate (COUNT/SUM, no GROUP BY) always returns exactly one row.
+        assert r is not None
     return {
         "total": r[0] or 0,
         "auto_learned": r[1] or 0,

@@ -277,7 +277,10 @@ async def stream_agent(req: StreamRequest):
     """
     session_id = await resolve_session_id(req.session_id)
 
-    initial_state = {
+    # SQLAgentState's five graph-populated keys (grounding_result,
+    # guardrail_preview, confidence, confidence_reasons, confidence_signals)
+    # are NotRequired — a fresh pre-graph state omits them.
+    initial_state: SQLAgentState = {
         "user_query": req.user_query,
         "session_id": session_id,
         "clarification_context": req.clarification_context.model_dump() if req.clarification_context else None,

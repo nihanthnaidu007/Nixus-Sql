@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import text
 
@@ -40,7 +41,7 @@ def _parse_planner_estimate(payload: object) -> dict:
     drivers hand back a JSON string). Any unexpected shape raises, which the
     caller treats as "no preview" — never as a run failure.
     """
-    plan = json.loads(payload) if isinstance(payload, str) else payload
+    plan: Any = json.loads(payload) if isinstance(payload, str) else payload
     top = plan[0]["Plan"]
     return {
         "estimated_rows": int(top["Plan Rows"]),

@@ -51,13 +51,17 @@ async def self_correct_node(state: SQLAgentState) -> SQLAgentState:
 
     state["correction_attempts"] += 1
 
-    if state.get("execution_result") and not state["execution_result"]["success"]:
-        failure_reason = f"EXECUTION ERROR: {state['execution_result']['error']}"
-    elif state.get("result_quality") and not state["result_quality"]["is_acceptable"]:
-        q = state["result_quality"]
-        failure_reason = f"RESULT QUALITY ({q['status']}): {q['reasoning']}"
-    elif state.get("validation_result") and not state["validation_result"]["is_valid"]:
-        failure_reason = f"SYNTAX ERROR: {'; '.join(state['validation_result']['errors'])}"
+    # Bind each candidate state field once: the `.get` + truthiness check is
+    # what narrows the Optional for mypy (and keeps one lookup, not two).
+    execution = state.get("execution_result")
+    quality = state.get("result_quality")
+    validation = state.get("validation_result")
+    if execution and not execution["success"]:
+        failure_reason = f"EXECUTION ERROR: {execution['error']}"
+    elif quality and not quality["is_acceptable"]:
+        failure_reason = f"RESULT QUALITY ({quality['status']}): {quality['reasoning']}"
+    elif validation and not validation["is_valid"]:
+        failure_reason = f"SYNTAX ERROR: {'; '.join(validation['errors'])}"
     else:
         failure_reason = "Unknown failure"
 

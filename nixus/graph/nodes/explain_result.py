@@ -106,8 +106,8 @@ async def explain_result_node(state: SQLAgentState) -> SQLAgentState:
     rows = result.get("rows", [])
     row_count = result.get("row_count", 0)
 
-    if state.get("served_from_cache") and state.get("cache_result"):
-        cr = state["cache_result"]
+    cr = state.get("cache_result")
+    if state.get("served_from_cache") and cr:
         if cr.get("explanation"):
             state["explanation"] = cr["explanation"]
             # A cache hit serves a previously clean, GOOD first-pass result, so
@@ -229,7 +229,7 @@ async def explain_result_node(state: SQLAgentState) -> SQLAgentState:
                 result_preview=rows[:5],
                 row_count=row_count,
                 execution_time_ms=result.get("execution_time_ms", 0),
-                chart_type=state.get("chart_config", {}).get("chart_type"),
+                chart_type=(state.get("chart_config") or {}).get("chart_type"),
                 explanation=state["explanation"],
             )
         except Exception as e:

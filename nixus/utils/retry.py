@@ -21,7 +21,9 @@ try:
     from anthropic import APIStatusError as AnthropicStatusError  # noqa: F401
     from anthropic import InternalServerError as AnthropicInternalError
     from anthropic import RateLimitError as AnthropicRateLimitError
-    _anthropic_errors = (
+    # Annotated so the ImportError fallback below (Exception,) typechecks —
+    # both branches are "a tuple of exception types to retry on".
+    _anthropic_errors: tuple[type[Exception], ...] = (
         AnthropicRateLimitError,
         AnthropicConnectionError,
         AnthropicInternalError,
@@ -33,7 +35,7 @@ try:
     from openai import APIConnectionError as OpenAIConnectionError
     from openai import InternalServerError as OpenAIInternalError
     from openai import RateLimitError as OpenAIRateLimitError
-    _openai_errors = (
+    _openai_errors: tuple[type[Exception], ...] = (
         OpenAIRateLimitError,
         OpenAIConnectionError,
         OpenAIInternalError,

@@ -13,6 +13,10 @@ consumer needs it.
 """
 import logging
 import time
+from collections.abc import Mapping
+from typing import Any
+
+from langchain_core.runnables import RunnableConfig
 
 from nixus.graph.graph import build_graph
 from nixus.graph.state import SQLAgentState
@@ -40,7 +44,7 @@ def derive_status(outcome: str | None, error: str | None) -> str:
 async def record_history_safely(
     session_id: str,
     question: str,
-    final_state: dict,
+    final_state: Mapping[str, Any],
     duration_ms: float,
 ) -> None:
     """Persist one query_history row; a history failure NEVER fails a query.
@@ -67,7 +71,10 @@ async def record_history_safely(
         )
 
 
-def get_thread_config(session_id: str, base_config: dict | None = None) -> dict:
+def get_thread_config(
+    session_id: str,
+    base_config: RunnableConfig | dict[str, Any] | None = None,
+) -> dict:
     """Merge a LangGraph thread_id into the run config so the AsyncPostgresSaver checkpointer can find the checkpoint."""
     cfg = dict(base_config) if base_config else {}
     cfg["configurable"] = {**(cfg.get("configurable") or {}), "thread_id": session_id}

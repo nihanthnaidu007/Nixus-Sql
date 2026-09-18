@@ -58,7 +58,9 @@ def test_must_not_flag(text):
 
 def test_empty_and_none_explanations_are_not_overstated():
     assert not is_overstated("", "q").overstated
-    assert not is_overstated(None, "q").overstated  # type: ignore[arg-type]
+    # None is a runtime-valid input (treated as ""); mypy skips unannotated
+    # test bodies, so no ignore comment is needed here.
+    assert not is_overstated(None, "q").overstated
 
 
 def test_causal_marker_about_the_query_is_not_flagged():

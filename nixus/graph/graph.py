@@ -1,6 +1,9 @@
+from typing import Any
+
 from dotenv import load_dotenv
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, StateGraph
+from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
@@ -47,7 +50,7 @@ _pg_url = (
 # The same AsyncPostgresSaver instance must be reused by both the initial
 # invoke and any resume invoke (required for interrupt/resume to work across
 # calls and across multiple API processes hitting the same Postgres).
-_pool: AsyncConnectionPool | None = None
+_pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
 _checkpointer: AsyncPostgresSaver | None = None
 _graph = None
 
@@ -63,7 +66,7 @@ async def init_checkpointer() -> None:
     global _pool, _checkpointer
     if _checkpointer is not None:
         return
-    _pool = AsyncConnectionPool(
+    _pool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]](
         _pg_url,
         min_size=1,
         max_size=5,

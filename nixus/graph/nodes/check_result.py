@@ -12,6 +12,9 @@ def now():
 async def check_result_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "check_result"
     result = state["execution_result"]
+    # The graph only reaches this node after execute_query, which always sets
+    # execution_result — the assert makes that invariant visible to mypy.
+    assert result is not None, "check_result before execute_query: no execution_result"
 
     if not result["success"]:
         quality = {"status": "ERROR", "reasoning": result["error"], "is_acceptable": False}

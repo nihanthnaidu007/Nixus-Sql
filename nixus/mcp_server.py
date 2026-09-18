@@ -301,6 +301,9 @@ class McpServer:
                 line = line.strip()
                 if not line:
                     continue
+                # Typed up front: handle_message returns a response payload,
+                # a batch payload, or None for notifications.
+                response: dict | list | None = None
                 try:
                     msg = json.loads(line)
                 except json.JSONDecodeError as e:

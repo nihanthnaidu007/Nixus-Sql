@@ -2,6 +2,9 @@
 #
 # Jobs:
 #   lint             — ruff check with the version pinned in requirements-dev.txt.
+#   typecheck        — mypy over the whole tree (config: [tool.mypy] in
+#                      pyproject.toml), adopted as a standing gate by the
+#                      post-audit remediation (phase-2 audit finding G2).
 #   tests            — the full offline suite, invoked with EXPLICIT paths
 #                      (`pytest tests/ eval/`), so collection never depends on
 #                      pytest.ini's testpaths; plus a pgvector service container
@@ -52,6 +55,24 @@ jobs:
         run: pip install ruff==0.16.8
       - name: Lint (ruff)
         run: ruff check .
+
+  typecheck:
+    # Post-audit remediation (audit G2): mypy is a standing gate, not a one-off
+    # cleanup. Config lives in [tool.mypy] in pyproject.toml; the checked scope
+    # (`mypy .`) is exactly what the audit measured (70 errors on b083dd0, all
+    # fixed in the same change that adopted this job). Installs the locked
+    # runtime deps so third-party imports resolve to their real packages/stubs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install locked dependencies + dev tools
+        run: pip install -r requirements.lock -r requirements-dev.txt
+      - name: Type check (mypy)
+        run: mypy .
 
   tests:
     runs-on: ubuntu-latest

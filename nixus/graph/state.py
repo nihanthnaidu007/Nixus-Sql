@@ -107,6 +107,11 @@ class SQLAgentState(TypedDict):
     guardrail_preview: NotRequired[dict | None]
     execution_result: dict | None
     result_quality: dict | None
+    # The corpus row THIS run auto-learned (explain_result's store call →
+    # RETURNING id). Stamped mid-run so record_history_safely can link the
+    # query_history row to it — a later feedback/reject names this id.
+    # Absent for runs that learned nothing (duplicate, refusal, error).
+    fewshot_example_id: NotRequired[int | None]
     correction_attempts: int
     correction_history: list
     chart_config: dict | None

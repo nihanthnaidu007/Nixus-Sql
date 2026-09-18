@@ -123,7 +123,7 @@ export function SystemStatus() {
               cache && [
                 ["cached queries", String(cache.entries)],
                 ["cache hits", String(cache.total_hits)],
-                ["hit rate", `${Math.round(cache.hit_rate * 100)}%`],
+                ["hit rate", `${cache.hit_rate.toFixed(1)}%`],
               ]
             }
           />

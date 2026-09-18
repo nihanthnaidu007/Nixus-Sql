@@ -212,6 +212,12 @@ async def explain_result_node(state: SQLAgentState) -> SQLAgentState:
             )
             if not stored:
                 logger.debug("Few-shot skipped (near-duplicate detected)")
+            else:
+                # Run→few-shot linkage: the history row (written by
+                # record_history_safely after the graph completes) carries
+                # this id, so a later feedback/reject names exactly the
+                # corpus row to demote.
+                state["fewshot_example_id"] = stored
         except Exception as e:
             logger.warning(
                 "Non-critical write failed in explain_result "

@@ -51,6 +51,11 @@ async def execute_query_node(state: SQLAgentState) -> SQLAgentState:
                 "rows": rows,
                 "columns": columns,
                 "row_count": len(rows),
+                # The cap this result was actually fetched under — the MCP
+                # `query` tool surfaces it in its sanitized contract (the same
+                # field GuardedResult carries for /run-sql). Success-only: a
+                # failed execution returned no set, so its limit is meaningless.
+                "row_limit": ROW_FETCH_LIMIT,
                 "execution_time_ms": round(elapsed, 1),
                 "error": None,
             }

@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from api.analytics import router as analytics_router
 from api.auth import APIKeyMiddleware, configured_api_key
 from api.export import router as export_router
 from api.guardrails import router as guardrails_router
@@ -660,6 +661,11 @@ app.include_router(history_router, prefix="/api/v1")
 # Phase 2 W2 — the guardrails manifest: a static settings read, same inherited
 # fail-closed auth as every route above.
 app.include_router(guardrails_router, prefix="/api/v1")
+
+# Phase 3 W1 — aggregates-only analytics (D2): counts/rates over query_history
+# plus the composed cache/few-shot stats. No raw SQL bodies, same inherited
+# fail-closed auth.
+app.include_router(analytics_router, prefix="/api/v1")
 
 # Unversioned health alias for infrastructure probes (load balancers, uptime
 # checks) that expect a stable, version-independent path. Same handler as

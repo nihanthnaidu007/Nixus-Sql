@@ -63,6 +63,9 @@ async def record_history_safely(
             status=derive_status(final_state.get("outcome"), final_state.get("error")),
             duration_ms=duration_ms,
             row_count=int(execution.get("row_count") or 0),
+            # The corpus row this run learned (explain_result stamps it) —
+            # the run→few-shot linkage a later feedback/reject demotes.
+            fewshot_example_id=final_state.get("fewshot_example_id"),
         )
     except Exception:
         logger.exception(

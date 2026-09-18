@@ -11,7 +11,11 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { fetchQueryHistory, type HistoryEntry } from "@/lib/api";
+import {
+  fetchQueryHistory,
+  postHistoryFeedback,
+  type HistoryEntry,
+} from "@/lib/api";
 
 const PAGE_SIZE = 20;
 
@@ -96,6 +100,31 @@ export function HistoryPanel({
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Local-only feedback state (Phase 3 W1 D1): the row's verdict lives on the
+  // entry itself; busy/error last just long enough to record one verdict.
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  const rejectEntry = useCallback(async (entry: HistoryEntry) => {
+    setBusyId(entry.id);
+    setFeedbackError(null);
+    try {
+      await postHistoryFeedback(entry.id, "reject");
+      // No refetch — flip the row in place; the server has tombstoned the
+      // run's learned few-shot example behind the retrieval gate.
+      setEntries(
+        (prev) =>
+          prev?.map((e) =>
+            e.id === entry.id ? { ...e, feedback_verdict: "reject" } : e,
+          ) ?? prev,
+      );
+    } catch (e) {
+      setFeedbackError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
   return (
     <section className="section history-panel">
       <div className="result-head">
@@ -148,6 +177,12 @@ export function HistoryPanel({
         </div>
       )}
 
+      {feedbackError && (
+        <div className="saved-error" role="alert">
+          {feedbackError}
+        </div>
+      )}
+
       {entries === null ? (
         <div className="saved-empty">Loading history…</div>
       ) : entries.length === 0 ? (
@@ -167,19 +202,42 @@ export function HistoryPanel({
                   >
                     {h.status}
                   </span>
+                  {h.feedback_verdict === "reject" && (
+                    <span className="history-status history-status-reject">
+                      Rejected
+                    </span>
+                  )}
+                  {h.feedback_verdict === "accept" && (
+                    <span className="history-status history-status-accept">
+                      Accepted
+                    </span>
+                  )}
                   {shortTime(h.created_at)}
                   {h.row_count != null && ` · ${h.row_count.toLocaleString()} rows`}
                   {h.duration_ms != null && ` · ${h.duration_ms} ms`}
                 </span>
               </div>
-              <button
-                type="button"
-                className="saved-btn"
-                onClick={() => onRun(h.question)}
-                aria-label={`Ask again: ${h.question}`}
-              >
-                Ask again
-              </button>
+              <div className="history-actions">
+                {h.feedback_verdict === null && (
+                  <button
+                    type="button"
+                    className="saved-btn"
+                    disabled={busyId === h.id}
+                    onClick={() => void rejectEntry(h)}
+                    aria-label={`Reject answer: ${h.question}`}
+                  >
+                    {busyId === h.id ? "Rejecting…" : "Reject"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="saved-btn"
+                  onClick={() => onRun(h.question)}
+                  aria-label={`Ask again: ${h.question}`}
+                >
+                  Ask again
+                </button>
+              </div>
             </li>
           ))}
         </ul>

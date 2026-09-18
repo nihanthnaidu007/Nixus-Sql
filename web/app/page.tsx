@@ -34,6 +34,7 @@ import { AnswerView, LiveRunView, RunningState } from "@/components/ResultView";
 import { Clarification, ConversationContext } from "@/components/Clarification";
 import { Refusal } from "@/components/Refusal";
 import { SystemStatus } from "@/components/SystemStatus";
+import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { SavedQueries, type SaveDraft } from "@/components/SavedQueries";
 import { HistoryPanel } from "@/components/HistoryPanel";
 
@@ -268,6 +269,10 @@ export default function Page() {
         refreshKey={historyRefresh}
         onRun={runFromPanel}
       />
+
+      {/* Phase 3 W1 D2 — aggregates over the run record (counts/rates only,
+          no raw SQL). Loads its own data, local state only. */}
+      <AnalyticsPanel />
 
       {/* Phase 18 — a DISCREET, peripheral system-status footer (DB health +
           cache/few-shot stats). Always present, quiet, never inline with a

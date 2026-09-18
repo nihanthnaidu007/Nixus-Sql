@@ -18,7 +18,8 @@ from nixus.db.connection import state_engine
 
 _ROW_SQL = """
     SELECT id, session_id, question, generated_sql, status,
-           duration_ms, row_count, created_at
+           duration_ms, row_count, created_at,
+           fewshot_example_id, feedback_verdict
     FROM query_history
 """
 
@@ -44,6 +45,10 @@ def _row_to_dict(row) -> dict:
         "duration_ms": float(row[5]) if row[5] is not None else 0.0,
         "row_count": int(row[6]) if row[6] is not None else 0,
         "created_at": row[7].isoformat() if isinstance(row[7], datetime) else row[7],
+        # Feedback surface (0005): the corpus row this run learned and the
+        # explicit verdict recorded on it — null when unlinked/unreviewed.
+        "fewshot_example_id": int(row[8]) if row[8] is not None else None,
+        "feedback_verdict": row[9],
     }
 
 
@@ -54,15 +59,21 @@ async def record_query_history(
     status: str,
     duration_ms: float,
     row_count: int,
+    fewshot_example_id: int | None = None,
 ) -> int:
     """Insert one history row; returns its id. Callers wrap this in the
-    repo's resilience pattern so a history failure can never break a query."""
+    repo's resilience pattern so a history failure can never break a query.
+
+    ``fewshot_example_id`` is the run→few-shot linkage (0005): the corpus row
+    this run auto-learned, if any — what a later feedback/reject demotes.
+    """
     async with state_engine.begin() as conn:
         result = await conn.execute(text("""
             INSERT INTO query_history
-                (session_id, question, generated_sql, status, duration_ms, row_count)
+                (session_id, question, generated_sql, status, duration_ms,
+                 row_count, fewshot_example_id)
             VALUES
-                (:sid, :question, :sql, :status, :duration, :rows)
+                (:sid, :question, :sql, :status, :duration, :rows, :fewshot_id)
             RETURNING id
         """), {
             "sid": session_id,
@@ -71,6 +82,7 @@ async def record_query_history(
             "status": status,
             "duration": float(duration_ms),
             "rows": int(row_count),
+            "fewshot_id": fewshot_example_id,
         })
         return int(result.scalar_one())
 

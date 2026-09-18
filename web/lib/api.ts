@@ -1086,6 +1086,70 @@ export async function fetchQueryHistory(
   };
 }
 
+/** Aggregates-only analytics summary (Phase 3 W1 D2) — api/analytics.py.
+ *  Counts and rates only; the API never returns generated SQL or question
+ *  text, and neither does this contract. */
+export interface AnalyticsSummary {
+  totals: {
+    runs: number;
+    answered: number;
+    refused: number;
+    needs_clarification: number;
+    errors: number;
+  };
+  rates: {
+    answered_rate: number;
+    refusal_rate: number;
+    needs_clarification_rate: number;
+    error_rate: number;
+    accepted_feedback: number;
+    rejected_feedback: number;
+    accept_rate: number;
+  };
+  latency_ms: {
+    avg: number | null;
+    p95: number | null;
+    max: number | null;
+  };
+  volume: Array<{ date: string; runs: number; answered: number }>;
+  /** The exact /cache-stats shape (composed server-side). */
+  cache: { entries: number; total_hits: number; hit_rate: number };
+  /** The exact /fewshot-stats shape (composed server-side). */
+  fewshot: { total: number; auto_learned: number; seeded: number };
+}
+
+/** Fetch the analytics summary. */
+export async function fetchAnalyticsSummary(): Promise<AnalyticsSummary> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/analytics/summary`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    let msg = `Could not load analytics (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail?.error) msg = String(body.detail.error);
+    } catch {
+      /* keep the default message */
+    }
+    throw new ApiError(msg, res.status);
+  }
+  const body = (await res.json()) as AnalyticsSummary;
+  return {
+    ...body,
+    totals: body?.totals ?? {
+      runs: 0, answered: 0, refused: 0, needs_clarification: 0, errors: 0,
+    },
+    rates: body?.rates ?? {
+      answered_rate: 0, refusal_rate: 0, needs_clarification_rate: 0,
+      error_rate: 0, accepted_feedback: 0, rejected_feedback: 0, accept_rate: 0,
+    },
+    latency_ms: body?.latency_ms ?? { avg: null, p95: null, max: null },
+    volume: Array.isArray(body?.volume) ? body.volume : [],
+    cache: body?.cache ?? { entries: 0, total_hits: 0, hit_rate: 0 },
+    fewshot: body?.fewshot ?? { total: 0, auto_learned: 0, seeded: 0 },
+  };
+}
+
 /** Record an explicit verdict on one history row (Phase 3 W1 D1). A reject
  *  tombstones the run's learned few-shot example server-side — the retrieval
  *  gate stops serving it (nixus/db/feedback_store.py). */

@@ -6,8 +6,9 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AnalyticsPanel } from "./AnalyticsPanel";
 import { HistoryPanel } from "./HistoryPanel";
-import type { HistoryEntry } from "@/lib/api";
+import type { AnalyticsSummary, HistoryEntry } from "@/lib/api";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -128,6 +129,77 @@ describe("HistoryPanel — reject feedback (Phase 3 W1)", () => {
     // Still unreviewed — the user can retry.
     expect(
       screen.getByRole("button", { name: /Reject answer/ }),
+    ).toBeInTheDocument();
+  });
+});
+
+const SUMMARY: AnalyticsSummary = {
+  totals: {
+    runs: 12, answered: 9, refused: 2, needs_clarification: 1, errors: 0,
+  },
+  rates: {
+    answered_rate: 75.0, refusal_rate: 16.7, needs_clarification_rate: 8.3,
+    error_rate: 0.0, accepted_feedback: 3, rejected_feedback: 1, accept_rate: 75.0,
+  },
+  latency_ms: { avg: 412.5, p95: 933.1, max: 1500.0 },
+  volume: [
+    { date: "2026-09-16", runs: 4, answered: 3 },
+    { date: "2026-09-17", runs: 8, answered: 6 },
+  ],
+  cache: { entries: 5, total_hits: 21, hit_rate: 80.8 },
+  fewshot: { total: 30, auto_learned: 18, seeded: 12 },
+};
+
+describe("AnalyticsPanel — aggregates-only ledger (Phase 3 W1)", () => {
+  it("renders the summary aggregates (counts/rates, composed stats)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(SUMMARY));
+
+    render(<AnalyticsPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Analytics · run record")).toBeInTheDocument();
+    });
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("75.0% · 9")).toBeInTheDocument();
+    // Cache hit rate displayed as the backend already provides it (0-100).
+    expect(screen.getByText("80.8%")).toBeInTheDocument();
+    expect(screen.getByText("30 (18 learned)")).toBeInTheDocument();
+    expect(screen.getByText("412.5 / 933.1 ms")).toBeInTheDocument();
+    expect(screen.getByText("2026-09-17")).toBeInTheDocument();
+    expect(screen.getByText("8 runs · 6 answered")).toBeInTheDocument();
+  });
+
+  it("shows a quiet empty state when the record is empty", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse({
+        ...SUMMARY,
+        totals: { ...SUMMARY.totals, runs: 0 },
+        latency_ms: { avg: null, p95: null, max: null },
+        volume: [],
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("0")).toBeInTheDocument();
+    });
+    expect(screen.getByText("—")).toBeInTheDocument(); // latency absent, honestly
+    expect(screen.queryByText(/active day/)).toBeNull();
+  });
+
+  it("surfaces a failed load as an alert with a quiet message", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response("server exploded", { status: 500 }),
+    );
+
+    render(<AnalyticsPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/Could not load analytics/);
+    });
+    expect(
+      screen.getByText(/Analytics unavailable — the run record could not be read/),
     ).toBeInTheDocument();
   });
 });

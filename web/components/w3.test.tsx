@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalyticsPanel } from "./AnalyticsPanel";
 import { HistoryPanel } from "./HistoryPanel";
+import { SystemStatus } from "./SystemStatus";
 import type { AnalyticsSummary, HistoryEntry } from "@/lib/api";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -201,5 +202,44 @@ describe("AnalyticsPanel — aggregates-only ledger (Phase 3 W1)", () => {
     expect(
       screen.getByText(/Analytics unavailable — the run record could not be read/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("SystemStatus — cache hit rate display (Phase 3 W1 D4)", () => {
+  /** Routes the three stats calls; anything else 404s loudly. */
+  function mockStats(health: unknown, cache: unknown, fewshot: unknown): void {
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/health")) return jsonResponse(health);
+        if (url.includes("/cache-stats")) return jsonResponse(cache);
+        if (url.includes("/fewshot-stats")) return jsonResponse(fewshot);
+        return new Response(`unmocked url ${url}`, { status: 404 });
+      },
+    );
+  }
+
+  it("displays the backend hit rate as-is (already 0-100, no second x100)", async () => {
+    mockStats(
+      {
+        status: "ok", db_connected: true, anthropic_connected: true,
+        openai_connected: true, langsmith_tracing: false, version: "3.0.0",
+      },
+      { entries: 5, total_hits: 21, hit_rate: 80.0 },
+      { total: 30, auto_learned: 18, seeded: 12 },
+    );
+
+    render(<SystemStatus />);
+
+    // Stats are lazy — open the expander first.
+    fireEvent.click(screen.getByRole("button", { name: /^system status/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("hit rate")).toBeInTheDocument();
+    });
+    // 80.0 from the backend must render as "80.0%" — the old Math.round(
+    // hit_rate * 100) turned it into "8000%". Regression test for D4.
+    expect(screen.getByText("80.0%")).toBeInTheDocument();
+    expect(screen.queryByText("8000%")).toBeNull();
   });
 });

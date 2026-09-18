@@ -804,7 +804,8 @@ export interface HealthStatus {
 export interface CacheStats {
   entries: number;
   total_hits: number;
-  hit_rate: number; // 0..1
+  /** Already 0-100 with one decimal (nixus/db/query_cache.py) — display as-is. */
+  hit_rate: number;
 }
 
 /** GET /api/v1/fewshot-stats — the few-shot example store (seeded + auto-learned). */

@@ -197,9 +197,12 @@ describe("HistoryPanel — staged feedback (Phase 3 W1/W2)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Run this SQL/ }));
     await waitFor(() => {
+      // W2 N5 — the row's question rides along as the manual run's
+      // provenance, so "save this result" persists a real natural_language.
       expect(onRunSql).toHaveBeenCalledWith(
         "SELECT * FROM customers LIMIT 10",
         "s1",
+        "Who are the top customers?",
       );
     });
   });

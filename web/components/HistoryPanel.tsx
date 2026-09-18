@@ -98,6 +98,8 @@ export function HistoryPanel({
   onRunSql?: (
     sql: string,
     sessionId: string,
+    /** W2 N5 — the row's origin question, for save-provenance on manual runs. */
+    originQuestion?: string,
   ) => Promise<{ ok: boolean; error: string | null }>;
   /** The undo window before a staged verdict is committed. Tests pass 0. */
   commitDelayMs?: number;
@@ -259,7 +261,14 @@ export function HistoryPanel({
     if (!onRunSql || runningSqlId !== null) return;
     setRunningSqlId(h.id);
     setRunSqlError(null);
-    const outcome = await onRunSql(h.generated_sql, h.session_id);
+    const outcome = await onRunSql(
+      h.generated_sql,
+      h.session_id,
+      // W2 N5 — the row's question rides along as the manual run's provenance,
+      // so "save this result" can persist a natural_language that re-asks
+      // correctly through the grounded pipeline.
+      h.question,
+    );
     setRunningSqlId(null);
     if (!outcome.ok) {
       setRunSqlError({

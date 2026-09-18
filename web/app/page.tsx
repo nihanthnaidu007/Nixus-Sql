@@ -85,6 +85,13 @@ export default function Page() {
   );
   const [activeOverride, setActiveOverride] = useState<ChartOverride>("auto");
   const [manualSqlRun, setManualSqlRun] = useState(false);
+  // W2 N5 — the history row the current manual SQL came from. Its question is
+  // the manual result's provenance: the save draft uses it as natural_language
+  // (re-running a saved query goes back through the grounded pipeline), since
+  // the ask box itself holds nothing meaningful for a direct SQL run.
+  const [manualOriginQuestion, setManualOriginQuestion] = useState<
+    string | null
+  >(null);
 
   /** After ANY completed run, scope the history panel to the run's session and
    *  tell it to refetch — the pipeline has written a fresh history row by now.
@@ -125,8 +132,10 @@ export default function Page() {
   async function submitFresh() {
     const q = question.trim();
     if (!q || loading) return;
-    // The form path starts clean: no seeded override, no manual-run note.
+    // The form path starts clean: no seeded override, no manual-run note,
+    // no manual-run provenance.
     setManualSqlRun(false);
+    setManualOriginQuestion(null);
     setSeededOverride(null);
     setActiveOverride("auto");
     await submitFreshWith(q);
@@ -170,11 +179,16 @@ export default function Page() {
   // Phase 2 W1 — saved queries: the CURRENT grounded answer becomes a savable
   // draft (question + SQL + the active chart override, W2 N5). Present only
   // for answered runs; a refusal or a clarification prompt has nothing
-  // meaningful to persist.
+  // meaningful to persist. For a manual SQL run the ask box holds nothing
+  // meaningful — the ORIGIN history row's question is the provenance that
+  // re-runs correctly through the grounded pipeline.
+  const draftQuestion = (
+    manualSqlRun ? manualOriginQuestion : question.trim()
+  )?.trim();
   const saveDraft: SaveDraft | null =
-    result && !loading && result.isAnswer
+    result && !loading && result.isAnswer && draftQuestion
       ? {
-          naturalLanguage: question.trim(),
+          naturalLanguage: draftQuestion,
           generatedSql: result.sql,
           chartOverride: activeOverride !== "auto" ? activeOverride : undefined,
         }
@@ -228,6 +242,7 @@ export default function Page() {
   async function runSqlFromHistory(
     sql: string,
     sessionId: string,
+    originQuestion?: string,
   ): Promise<{ ok: boolean; error: string | null }> {
     if (loading) return { ok: false, error: "A query is already running." };
     setLoading(true);
@@ -239,6 +254,7 @@ export default function Page() {
       if (outcome.ok && outcome.result) {
         setResult(outcome.result);
         setManualSqlRun(true);
+        setManualOriginQuestion(originQuestion?.trim() || null);
         setSeededOverride(null);
         setActiveOverride("auto");
         syncHistoryAfterRun(outcome.result);

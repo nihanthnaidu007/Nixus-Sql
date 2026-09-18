@@ -285,6 +285,17 @@ export interface NormalizedResult {
   raw: NixusResponse;
 }
 
+/** Format a FastAPI error body's `detail` for a human. Pydantic 422s arrive as
+ *  an ARRAY of {loc, msg} objects — String() would render "[object Object]" —
+ *  so pull the first validation message out. Plain-string details pass through. */
+function formatErrorDetail(detail: unknown): string | null {
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: unknown } | undefined;
+    return typeof first?.msg === "string" ? first.msg : null;
+  }
+  return typeof detail === "string" ? detail : null;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -408,7 +419,8 @@ export async function runEditedSql(
     try {
       const body = await res.json();
       if (body?.error) msg = String(body.error);
-      if (body?.detail) msg += ` — ${String(body.detail)}`;
+      const detail = body?.detail ? formatErrorDetail(body.detail) : null;
+      if (detail) msg += ` — ${detail}`;
     } catch {
       /* no JSON body — keep the status line */
     }
@@ -1021,7 +1033,10 @@ export async function createSavedQuery(input: {
     try {
       const body = await res.json();
       if (body?.detail?.error) msg = String(body.detail.error);
-      else if (body?.detail) msg = String(body.detail);
+      else {
+        const detail = body?.detail ? formatErrorDetail(body.detail) : null;
+        if (detail) msg = detail;
+      }
     } catch {
       /* keep the status line */
     }

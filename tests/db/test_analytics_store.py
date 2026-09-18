@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import asyncpg
 import pytest
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nixus.config import settings
@@ -66,7 +66,7 @@ def analytics_db_url():
             "Postgres not reachable — analytics aggregation tests need a live database."
         )
 
-    async def _setup(admin_base_url: object) -> str:
+    async def _setup(admin_base_url: URL) -> str:
         await _drop_db()
         admin = await asyncpg.connect(**_pg_kwargs("postgres"))
         try:

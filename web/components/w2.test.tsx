@@ -27,6 +27,7 @@ const MANIFEST: GuardrailsManifest = {
   clarification_round_cap: 2,
   select_only: "Only SELECT statements are executed.",
   read_only_role: "The target database is reached through a read-only PostgreSQL role.",
+  target_database: "nixus_demo",
   models: { sql_generation: "claude-sonnet-4-5" },
   auth: "Fail-closed API key (X-API-Key header).",
   note: "These are caps, budgets, timeouts, and estimates only.",

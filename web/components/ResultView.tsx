@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   runEditedSql,
   type ChartConfig,
@@ -15,7 +15,8 @@ import { ConfidenceBanner } from "./ConfidenceBanner";
 import { IntelligenceStrip } from "./IntelligenceStrip";
 import { LivePipeline, PipelineSection } from "./Pipeline";
 import { ExportButtons } from "./ExportButtons";
-import { GuardrailChips } from "./GuardrailChips";
+import { GuardrailChips, guardrailWarnings } from "./GuardrailChips";
+import { ChartExport } from "./ChartExport";
 
 const ENTITY_CAP = 8;
 
@@ -73,7 +74,7 @@ function ViewToggle({
  * the SAME x/y primitives — it never re-queries or re-classifies.
  */
 const CHART_CHOICES = ["bar", "line", "pie", "scatter"] as const;
-type ChartOverride = "auto" | (typeof CHART_CHOICES)[number];
+export type ChartOverride = "auto" | (typeof CHART_CHOICES)[number];
 
 function ChartTypePicker({
   value,
@@ -90,7 +91,9 @@ function ChartTypePicker({
           type="button"
           aria-pressed={value === t}
           onClick={() => onChange(t)}
-          title={t === "auto" ? "The backend's chart decision" : `Render as ${t}`}
+          title={
+            t === "auto" ? "The backend's chart decision" : `Render as ${t}`
+          }
         >
           {t === "auto" ? "Auto" : t[0].toUpperCase() + t.slice(1)}
         </button>
@@ -181,7 +184,9 @@ function SqlEditor({
   // A non-SELECT rejected by the read-only guard reads as "this is read-only", which
   // is a different message in kind from a plain query error (bad column, timeout).
   const isReadOnlyRejection = !!error && /only select/i.test(error);
-  const errorKicker = isReadOnlyRejection ? "Rejected · read-only" : "Query error";
+  const errorKicker = isReadOnlyRejection
+    ? "Rejected · read-only"
+    : "Query error";
 
   const lines = Math.min(16, Math.max(4, value.split("\n").length + 1));
 
@@ -233,12 +238,39 @@ function SqlEditor({
   );
 }
 
-export function AnswerView({ result }: { result: NormalizedResult }) {
+export function AnswerView({
+  result,
+  initialChartOverride = "auto",
+  onChartOverrideChange,
+  manualRun = false,
+}: {
+  result: NormalizedResult;
+  /** W2 N5 — a saved query's persisted chart override seeds the picker when
+   *  that query is re-run; "auto" (the default) defers to the backend. */
+  initialChartOverride?: ChartOverride;
+  /** W2 N5 — reports picker changes so the page's "Save current" draft can
+   *  persist the override with the saved query. */
+  onChartOverrideChange?: (o: ChartOverride) => void;
+  /** W2 N3 — this result came from a history SQL re-run (a direct /run-sql
+   *  execution). Same honesty rule as an edited run: the system didn't reason
+   *  about this SQL, so no grounded-run panels are fabricated for it. */
+  manualRun?: boolean;
+}) {
   const [mode, setMode] = useState<ResultMode>("table");
   // W2 D1 — chart-type override. "auto" (the default) defers to the backend's
   // classify_chart decision; a picked type re-renders the SAME x/y primitives
-  // through ChartView. Local state only; resets on every new result.
-  const [chartOverride, setChartOverride] = useState<ChartOverride>("auto");
+  // through ChartView. Seeded by a re-run saved query (W2 N5); resets on every
+  // new result.
+  const [chartOverride, setChartOverride] =
+    useState<ChartOverride>(initialChartOverride);
+  // W2 N7 — the show-the-SQL coaching surface starts COLLAPSED ("one toggle
+  // reveals"), and opens by itself whenever a guardrail warning exists —
+  // overflow/timeout notices must be seen, never discovered behind a toggle.
+  const [sqlOpen, setSqlOpen] = useState(
+    guardrailWarnings(result.streamUpdates).length > 0,
+  );
+  // W2 N5 — the container of the rendered chart, for PNG/SVG export.
+  const chartAreaRef = useRef<HTMLDivElement | null>(null);
 
   // B6 — edit-SQL + re-run. A successful re-run PATCHES the rendered result in place
   // (`patched`), so the SQL / table / chart / footer below all read from `view`. The
@@ -257,15 +289,18 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
     setEditError(null);
     setRerunning(false);
     setMode("table");
-    setChartOverride("auto");
-  }, [result]);
+    setChartOverride(initialChartOverride);
+    setSqlOpen(guardrailWarnings(result.streamUpdates).length > 0);
+  }, [result, initialChartOverride]);
 
   const view = patched ?? result;
-  // True once a hand-written SQL run is what's on screen. A manual run bypasses
+  // True once a hand-written SQL run is what's on screen — either an edited
+  // re-run of this result or a history SQL re-run (W2 N3). A manual run bypasses
   // grounding/scope/cache, so we render only what /run-sql actually returns (SQL +
   // table + chart) and SUPPRESS the grounded-run panels (intelligence strip,
   // confidence, pipeline) rather than fabricate them for SQL the system didn't reason about.
   const isEdited = patched !== null;
+  const isManual = isEdited || manualRun;
   const chartable = hasChart(view.chartConfig);
   // W2 D1 — the chart the user asked for, or the backend's when on "auto". The
   // override keeps the backend's x/y primitives and swaps ONLY the type; a shape
@@ -275,6 +310,11 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
     chartOverride !== "auto" && view.chartConfig
       ? { ...view.chartConfig, chart_type: chartOverride }
       : view.chartConfig;
+
+  function changeOverride(o: ChartOverride) {
+    setChartOverride(o);
+    onChartOverrideChange?.(o);
+  }
 
   function openEditor() {
     setDraft(view.sql);
@@ -298,7 +338,7 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
       setPatched(outcome.result);
       setEditing(false);
       setMode("table"); // land on the table for the freshly run result
-      setChartOverride("auto"); // ...and the picker defers to the backend again
+      changeOverride("auto"); // ...and the picker defers to the backend again
     } else {
       // Rejected write / bad query — shown cleanly inside the editor, prior result kept.
       setEditError(outcome.error ?? "The edited SQL could not be run.");
@@ -309,41 +349,70 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
     <div className="results">
       {/* What the system DID — a glanceable header above the artifacts. Omitted for a
           manual SQL run, which the system didn't reason about (nothing honest to show). */}
-      {!isEdited && <IntelligenceStrip result={view} />}
+      {!isManual && <IntelligenceStrip result={view} />}
 
+      {/* W2 N7 — show-the-SQL coaching: ONE toggle reveals the generated SQL plus
+          the guardrails that applied (row cap, timeout, SELECT-only — the manifest
+          chips, plus this run's estimate and warnings). The transparency surface
+          stays labeled when collapsed, and auto-opens on a run warning. */}
       <section className="section s0">
         <div className="result-head">
-          <span className="label">SQL{isEdited ? " · edited" : ""}</span>
-          {!editing && view.sql && (
-            <button type="button" className="sql-edit-toggle" onClick={openEditor}>
+          <span className="label">
+            SQL{isEdited ? " · edited" : manualRun ? " · manual" : ""}
+          </span>
+          {sqlOpen && !editing && view.sql && (
+            <button
+              type="button"
+              className="sql-edit-toggle"
+              onClick={openEditor}
+            >
               Edit SQL
             </button>
           )}
+          <button
+            type="button"
+            className="sql-reveal"
+            aria-expanded={sqlOpen}
+            aria-label="Show the SQL and the guardrails that applied"
+            title="Reveals the generated SQL and the guardrails that applied (row cap, timeout, SELECT-only)"
+            onClick={() => setSqlOpen((o) => !o)}
+          >
+            {sqlOpen ? "Hide the SQL" : "Show the SQL"}
+          </button>
         </div>
 
-        {editing ? (
-          <SqlEditor
-            value={draft}
-            onChange={setDraft}
-            onRerun={rerun}
-            onCancel={cancelEdit}
-            running={rerunning}
-            error={editError}
-          />
-        ) : view.sql ? (
-          <SqlBlock sql={view.sql} />
-        ) : (
-          <div className="empty">No SQL was generated for this query.</div>
-        )}
+        {sqlOpen && (
+          <div className="sql-coach">
+            {editing ? (
+              <SqlEditor
+                value={draft}
+                onChange={setDraft}
+                onRerun={rerun}
+                onCancel={cancelEdit}
+                running={rerunning}
+                error={editError}
+              />
+            ) : view.sql ? (
+              <SqlBlock sql={view.sql} />
+            ) : (
+              <div className="empty">No SQL was generated for this query.</div>
+            )}
 
-        {isEdited && !editing && (
-          <p className="edit-note">
-            <span className="edit-note-mark" aria-hidden>
-              ✎
-            </span>
-            Manual SQL — executed directly through the read-only role. Not grounded or
-            scope-checked, so no confidence is assessed for this run.
-          </p>
+            {isManual && !editing && (
+              <p className="edit-note">
+                <span className="edit-note-mark" aria-hidden>
+                  ✎
+                </span>
+                Manual SQL — executed directly through the read-only role. Not
+                grounded or scope-checked, so no confidence is assessed for this
+                run.
+              </p>
+            )}
+
+            {/* The guardrails that APPLIED to this run — caps, timeout,
+                SELECT-only, the EXPLAIN estimate, this run's warnings. */}
+            <GuardrailChips result={view} />
+          </div>
         )}
       </section>
 
@@ -359,12 +428,11 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
           {/* W2 D1 — the type override sits beside the toggle, in chart view only,
               and only when there is a chart to override. Local state; no refetch. */}
           {mode === "chart" && chartable && (
-            <ChartTypePicker value={chartOverride} onChange={setChartOverride} />
+            <ChartTypePicker value={chartOverride} onChange={changeOverride} />
           )}
+          {/* W2 N5 — download the chart AS RENDERED (PNG/SVG), chart view only. */}
+          {mode === "chart" && <ChartExport container={chartAreaRef} />}
         </div>
-        {/* W2 D2.3 — the guardrails as a visible surface: caps, timeout, budgets,
-            the EXPLAIN estimate when present, and this run's warnings. */}
-        <GuardrailChips result={view} />
         {mode === "table" ? (
           <ResultTable
             columns={view.columns}
@@ -373,7 +441,9 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
             cached={view.servedFromCache}
           />
         ) : (
-          <ChartView config={activeChartConfig} rows={view.rows} />
+          <div className="chart-area" ref={chartAreaRef}>
+            <ChartView config={activeChartConfig} rows={view.rows} />
+          </div>
         )}
         <ResultFooter
           rowCount={view.rowCount}
@@ -391,7 +461,7 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
 
       {/* Confidence + the execution RECORD describe the GROUNDED agent run. A manual
           SQL re-run has neither, so both are suppressed rather than faked. */}
-      {!isEdited && (
+      {!isManual && (
         <>
           <section className="section s3">
             <span className="label">Confidence</span>
@@ -469,7 +539,9 @@ export function LiveRunView({ live }: { live: LiveProgress }) {
                   </span>
                 ))}
                 {more > 0 && (
-                  <span className="intel-pill intel-pill-more">+{more} more</span>
+                  <span className="intel-pill intel-pill-more">
+                    +{more} more
+                  </span>
                 )}
               </span>
             </div>

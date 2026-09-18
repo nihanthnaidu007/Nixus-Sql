@@ -11,6 +11,8 @@ one raw surface and it stays behind /history's per-session filter.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import text
 
 from nixus.db.connection import state_engine
@@ -41,9 +43,12 @@ async def get_analytics_summary() -> dict:
                     SUM(CASE WHEN status = 'NEEDS_CLARIFICATION' THEN 1 ELSE 0 END)
                         AS needs_clarification,
                     SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END) AS errors,
-                    AVG(CASE WHEN duration_ms IS NOT NULL THEN duration_ms END),
-                    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms),
-                    MAX(duration_ms)
+                    -- Latency over executed (ANSWERED) runs: refusals and
+                    -- clarifications never ran SQL, so their duration is noise.
+                    AVG(CASE WHEN status = 'ANSWERED' THEN duration_ms END),
+                    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)
+                        FILTER (WHERE status = 'ANSWERED'),
+                    MAX(CASE WHEN status = 'ANSWERED' THEN duration_ms END)
                 FROM query_history
             """))
         ).fetchone()
@@ -56,10 +61,10 @@ async def get_analytics_summary() -> dict:
                     COUNT(*) AS runs,
                     SUM(CASE WHEN status = 'ANSWERED' THEN 1 ELSE 0 END) AS answered
                 FROM query_history
-                WHERE created_at >= (now() - :window::interval)
+                WHERE created_at >= :cutoff
                 GROUP BY day
                 ORDER BY day
-            """), {"window": f"{_DAILY_WINDOW_DAYS} days"})
+            """), {"cutoff": datetime.now(timezone.utc) - timedelta(days=_DAILY_WINDOW_DAYS)})
         ).fetchall()
 
         feedback = (

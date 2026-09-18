@@ -11,8 +11,10 @@ pgvector service runs these; without a live Postgres they skip cleanly):
    record_feedback, and assert it is never re-served AND no longer blocks
    re-learning the corrected query.
 """
+
 import asyncio
 import math
+import zlib
 from pathlib import Path
 
 import asyncpg
@@ -25,8 +27,12 @@ from nixus.db.migrations import runner
 
 TEST_DB = "nixus_feedback_test"
 MIGRATIONS = Path(runner.MIGRATIONS_DIR)
-PRE_0005 = ["0001_initial_schema.sql", "0002_api_sessions.sql",
-            "0003_saved_queries_query_history.sql", "0004_semantic_ingestions.sql"]
+PRE_0005 = [
+    "0001_initial_schema.sql",
+    "0002_api_sessions.sql",
+    "0003_saved_queries_query_history.sql",
+    "0004_semantic_ingestions.sql",
+]
 
 _ADMIN_URL = make_url(settings.state_url) if settings.state_url else None
 
@@ -77,7 +83,8 @@ async def _apply_through_0004() -> None:
                 await conn.execute((MIGRATIONS / name).read_text())
                 await conn.execute(
                     "INSERT INTO schema_migrations (version, filename) VALUES ($1, $2)",
-                    version, name,
+                    version,
+                    name,
                 )
     finally:
         await conn.close()
@@ -119,7 +126,7 @@ def migrated_db_url():
 @pytest.fixture
 def runner_over_test_db(monkeypatch, migrated_db_url):
     """Point the migration runner's config source at the throwaway DB."""
-    monkeypatch.setattr(runner.settings, "state_url", migrated_db_url)
+    monkeypatch.setattr(runner.settings, "state_database_url", migrated_db_url)
 
 
 # ── 1. Migration round-trip ──────────────────────────────────────────────────
@@ -134,7 +141,9 @@ def test_0005_round_trip_backfill_and_constraints(runner_over_test_db, migrated_
                     "INSERT INTO fewshot_examples (natural_language, sql_query, "
                     "query_type, embedding, auto_learned) "
                     "VALUES ($1, 'SELECT 1', 'filter', CAST($2 AS vector), $3)",
-                    nl, _vec(), auto,
+                    nl,
+                    _vec(),
+                    auto,
                 )
         finally:
             await conn.close()
@@ -171,8 +180,12 @@ def test_0005_round_trip_backfill_and_constraints(runner_over_test_db, migrated_
                 "WHERE table_name = 'query_history'"
             )
             names = {r["column_name"] for r in cols}
-            assert {"fewshot_example_id", "feedback_verdict", "feedback_note",
-                    "feedback_at"} <= names
+            assert {
+                "fewshot_example_id",
+                "feedback_verdict",
+                "feedback_note",
+                "feedback_at",
+            } <= names
 
             await conn.execute(
                 "INSERT INTO query_history (session_id, question, generated_sql, "
@@ -204,8 +217,10 @@ def test_0005_round_trip_backfill_and_constraints(runner_over_test_db, migrated_
 # ── 2. The reject invariant through the REAL stores ──────────────────────────
 async def _fake_embed(text: str) -> list[float]:
     """Deterministic 1536-dim vector with per-text DIRECTION (constant vectors
-    are always cosine-1.0 to each other, which would fake duplicates)."""
-    seed = float(abs(hash(text)) % 97) + 1.0
+    are always cosine-1.0 to each other, which would fake duplicates). zlib.crc32
+    instead of hash() so the direction — and therefore every similarity in the
+    file — is stable across processes, not just within one."""
+    seed = float(zlib.crc32(text.encode()) % 97) + 1.0
     return [math.sin(seed * (i + 1)) for i in range(1536)]
 
 
@@ -258,9 +273,14 @@ def test_rejected_sql_is_never_re_served_and_unblocks_relearning(
         assert recorded["fewshot_example_id"] == stored_id
         assert recorded["fewshot_disabled"] is True
 
-        # INVARIANT: the rejected example is never re-served…
+        # INVARIANT: the rejected example is never re-served. The throwaway DB
+        # cohabits with the round-trip test's corpus (module-scoped fixture),
+        # so the assertion is per-example, not emptiness.
         served_after = await fewshot_store.search_fewshots(vec, limit=5, threshold=0.0)
-        assert served_after == []
+        assert all(
+            ex["natural_language"] != "how many artists are there?"
+            for ex in served_after
+        )
 
         # …and its tombstone no longer blocks re-learning the corrected query:
         # same question (same vector → 1.0 similarity vs the disabled row),
@@ -284,8 +304,11 @@ def test_rejected_sql_is_never_re_served_and_unblocks_relearning(
         )
         accepted = await feedback_store.record_feedback(unlinked, "accept")
         assert accepted == {
-            "id": unlinked, "verdict": "accept", "note": None,
-            "fewshot_example_id": None, "fewshot_disabled": False,
+            "id": unlinked,
+            "verdict": "accept",
+            "note": None,
+            "fewshot_example_id": None,
+            "fewshot_disabled": False,
         }
 
     try:

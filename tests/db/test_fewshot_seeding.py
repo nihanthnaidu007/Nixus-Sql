@@ -6,6 +6,7 @@ seed loop's idempotency/failure accounting — with the store and the existing-
 question read monkeypatched, so they run in the W1 CI profile (no local
 Postgres, no live embedding provider).
 """
+
 import nixus.db.fewshot_seeding as seeding
 from nixus.db.fewshot_seeding import (
     SeedStats,
@@ -43,7 +44,9 @@ def test_unknown_source_raises():
 
 
 def test_tables_in_sql_extracts_distinct_tables():
-    sql = 'SELECT * FROM "Invoice" i JOIN "Customer" c ON i."CustomerId" = c."CustomerId"'
+    sql = (
+        'SELECT * FROM "Invoice" i JOIN "Customer" c ON i."CustomerId" = c."CustomerId"'
+    )
     assert tables_in_sql(sql) == ["Customer", "Invoice"]
 
 
@@ -65,6 +68,7 @@ QLIST = [{"question": f"q{i}", "sql": f"SELECT {i} FROM t"} for i in range(4)]
 def _async_returns(value):
     async def _fn():
         return value
+
     return _fn
 
 
@@ -76,10 +80,14 @@ class _StoreSpy:
         self.behavior = behavior or {}
 
     async def __call__(self, natural_language, sql_query, tables_used, auto_learned):
-        self.calls.append({
-            "nl": natural_language, "sql": sql_query,
-            "tables": tables_used, "auto": auto_learned,
-        })
+        self.calls.append(
+            {
+                "nl": natural_language,
+                "sql": sql_query,
+                "tables": tables_used,
+                "auto": auto_learned,
+            }
+        )
         return self.behavior.get(natural_language, True)
 
 
@@ -91,8 +99,9 @@ async def test_cold_start_stores_everything_with_extracted_tables(monkeypatch):
 
     stats = await seed_fewshots_from_corpus()
 
-    assert stats == SeedStats(source="saas", corpus_size=4, stored=4,
-                              skipped_existing=0, failed=0)
+    assert stats == SeedStats(
+        source="saas", corpus_size=4, stored=4, skipped_existing=0, failed=0
+    )
     assert all(c["auto"] is False for c in spy.calls)  # seeded, not auto-learned
     # sqlglot must have extracted the table name from each item's SQL.
     assert all(c["tables"] == ["t"] for c in spy.calls)
@@ -100,8 +109,9 @@ async def test_cold_start_stores_everything_with_extracted_tables(monkeypatch):
 
 async def test_warm_start_skips_everything_without_store_calls(monkeypatch):
     monkeypatch.setattr(seeding, "_corpus_items", lambda source: QLIST)
-    monkeypatch.setattr(seeding, "_existing_questions",
-                        _async_returns({q["question"] for q in QLIST}))
+    monkeypatch.setattr(
+        seeding, "_existing_questions", _async_returns({q["question"] for q in QLIST})
+    )
     spy = _StoreSpy()
     monkeypatch.setattr(seeding, "store_fewshot_example", spy)
 

@@ -6,6 +6,7 @@ the final schema). Asserts the outcome counts/rates, latency aggregates, the
 14-day volume roll-up, and the feedback counts over seeded history rows.
 Skips cleanly without a live Postgres (CI's pgvector service runs it).
 """
+
 import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -61,7 +62,9 @@ def analytics_db_url():
     if _ADMIN_URL is None:
         pytest.skip("STATE_DATABASE_URL not set — cannot provision throwaway db.")
     if not asyncio.run(_postgres_reachable()):
-        pytest.skip("Postgres not reachable — analytics aggregation tests need a live database.")
+        pytest.skip(
+            "Postgres not reachable — analytics aggregation tests need a live database."
+        )
 
     async def _setup(admin_base_url: object) -> str:
         await _drop_db()
@@ -70,11 +73,14 @@ def analytics_db_url():
             await admin.execute(f'CREATE DATABASE "{TEST_DB}"')
         finally:
             await admin.close()
-        url = str(make_url(str(admin_base_url)).set(
-            drivername="postgresql+asyncpg", database=TEST_DB))
+        url = str(
+            make_url(str(admin_base_url)).set(
+                drivername="postgresql+asyncpg", database=TEST_DB
+            )
+        )
         # The FULL sequence, through the real runner, against the throwaway DB.
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(runner.settings, "state_url", url)
+            mp.setattr(runner.settings, "state_database_url", url)
             applied = await runner.apply_migrations()
             assert applied, "the runner must set the schema up from scratch"
         return url
@@ -102,6 +108,8 @@ def test_aggregates_over_seeded_history(analytics_db_url):
         try:
             # 6 answered runs (durations 100..600), 2 refused, 1 error,
             # 1 needs_clarification → 10 runs, 60% answered.
+            # Non-executed runs carry duration 0.0 — the schema (migration 0003)
+            # is NOT NULL DEFAULT 0, matching what production writes for refusals.
             specs = [
                 ("ANSWERED", 100.0, now - timedelta(days=1)),
                 ("ANSWERED", 200.0, now - timedelta(days=1)),
@@ -109,17 +117,25 @@ def test_aggregates_over_seeded_history(analytics_db_url):
                 ("ANSWERED", 400.0, now - timedelta(days=2)),
                 ("ANSWERED", 500.0, now - timedelta(hours=1)),
                 ("ANSWERED", 600.0, now - timedelta(hours=2)),
-                ("REFUSED_OUT_OF_SCOPE", None, now - timedelta(days=3)),
-                ("REFUSED_WRITE", None, now - timedelta(days=3)),
-                ("ERROR", None, now - timedelta(days=4)),
-                ("NEEDS_CLARIFICATION", None, now - timedelta(days=40)),  # outside window
+                ("REFUSED_OUT_OF_SCOPE", 0.0, now - timedelta(days=3)),
+                ("REFUSED_WRITE", 0.0, now - timedelta(days=3)),
+                ("ERROR", 0.0, now - timedelta(days=4)),
+                (
+                    "NEEDS_CLARIFICATION",
+                    0.0,
+                    now - timedelta(days=40),
+                ),  # outside window
             ]
             for i, (status, dur, created) in enumerate(specs):
                 await conn.execute(
                     "INSERT INTO query_history (session_id, question, "
                     "generated_sql, status, duration_ms, created_at) "
                     "VALUES ($1, $2, '', $3, $4, $5)",
-                    f"sess-{uuid.uuid4()}", f"q{i}", status, dur, created,
+                    f"sess-{uuid.uuid4()}",
+                    f"q{i}",
+                    status,
+                    dur,
+                    created,
                 )
             # Feedback: 2 accepts, 1 reject.
             await conn.execute(
@@ -133,7 +149,12 @@ def test_aggregates_over_seeded_history(analytics_db_url):
         finally:
             await conn.close()
 
-        return await analytics_store.get_analytics_summary()
+        try:
+            return await analytics_store.get_analytics_summary()
+        finally:
+            # Dispose on the loop that owns the pool's connections — disposing
+            # from a foreign loop (or the GC) leaves cross-loop close futures.
+            await engine.dispose()
 
     try:
         s = asyncio.run(_seed_and_read())
@@ -152,11 +173,15 @@ def test_aggregates_over_seeded_history(analytics_db_url):
         assert s["rates"]["accepted_feedback"] == 2
         assert s["rates"]["rejected_feedback"] == 1
         assert s["rates"]["accept_rate"] == 66.7
-        # 14-day window: the 40-day-old run stays out; distinct days, oldest first.
+        # 14-day window: the 40-day-old run stays out. Distinct in-window days:
+        # today (the hour-offset runs), days 1-2 (answered), day 3 (refusals),
+        # day 4 (error) — five buckets, oldest first.
         days = [d["date"] for d in s["volume"]]
-        assert len(days) == 4
+        assert len(days) == 5
         assert days == sorted(days)
         assert sum(d["runs"] for d in s["volume"]) == 9
+        today = s["volume"][-1]
+        assert today["runs"] == 2 and today["answered"] == 2
         assert all(d["answered"] <= d["runs"] for d in s["volume"])
         # The composed shapes ride along on the same state DB.
         assert set(s["cache"]) == {"entries", "total_hits", "hit_rate"}
@@ -165,4 +190,3 @@ def test_aggregates_over_seeded_history(analytics_db_url):
         assert "generated_sql" not in str(s)
     finally:
         mp.undo()
-        asyncio.run(engine.dispose())

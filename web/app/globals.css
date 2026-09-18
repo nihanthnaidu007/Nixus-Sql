@@ -1992,6 +1992,12 @@ td.num {
 }
 
 .history-status-answered { color: var(--ok); border-color: var(--ok); }
+.history-status-reject {
+  color: var(--accent-deep);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+.history-status-accept { color: var(--ok); border-color: var(--ok); }
 .history-status-error,
 .history-status-refused_write {
   color: var(--accent-deep);

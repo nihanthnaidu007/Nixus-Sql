@@ -144,7 +144,9 @@ async def run_saved_query_endpoint(query_id: int, req: SavedQueryRunRequest | No
                 tables_used=tables,
                 auto_learned=True,
             )
-            final_state["fewshot_candidate_recorded"] = stored
+            # store_fewshot_example now returns the new row's id (None when
+            # duplicate-suppressed) — the response shape stays a bool.
+            final_state["fewshot_candidate_recorded"] = bool(stored)
         except Exception:
             # Corpus bookkeeping is best-effort — the answer itself succeeded.
             logger.exception(

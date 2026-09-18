@@ -9,7 +9,12 @@ async def search_fewshots(
     limit: int = 3,
     threshold: float = 0.60,
 ) -> list:
-    """Async pgvector similarity search on fewshot_examples."""
+    """Async pgvector similarity search on fewshot_examples.
+
+    THE RETRIEVAL GATE for the reject invariant: explicitly rejected examples
+    (disabled = TRUE) are never re-served — filtered here once, not patched
+    into each corpus writer.
+    """
     vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
     async with state_engine.connect() as conn:
         rows = await conn.execute(text("""
@@ -21,6 +26,7 @@ async def search_fewshots(
                 1 - (embedding <=> CAST(:query AS vector)) AS similarity
             FROM fewshot_examples
             WHERE 1 - (embedding <=> CAST(:query AS vector)) >= :threshold
+              AND NOT disabled
             ORDER BY embedding <=> CAST(:query AS vector)
             LIMIT :limit
         """), {
@@ -59,6 +65,7 @@ async def _is_duplicate(
                 SELECT 1
                 FROM fewshot_examples
                 WHERE 1 - (embedding <=> CAST(:emb AS vector)) >= :threshold
+                  AND NOT disabled
                 LIMIT 1
             """),
             {"emb": vec_str, "threshold": threshold},
@@ -71,29 +78,36 @@ async def store_fewshot_example(
     sql_query: str,
     tables_used: list,
     auto_learned: bool = False,
-) -> bool:
-    """Store a new few-shot example with embedding.
+) -> int | None:
+    """Store a new few-shot example with embedding; return its id.
 
-    Returns True if stored, False if skipped due to near-duplicate detection
-    (cosine similarity >= 0.98 against an existing row).
+    Returns None if skipped due to near-duplicate detection (cosine
+    similarity >= 0.98 against a live, non-disabled row). The id is the
+    run→few-shot linkage: callers stamp it into the run state so the query
+    history row can name the corpus row a later rejection would demote.
+
+    Provenance (``source``) is derived from ``auto_learned`` — the flag every
+    writer already passes — so all four writers keep one call shape.
     """
     from nixus.utils.embeddings import embed_text
     embedding = await embed_text(natural_language)
 
     if await _is_duplicate(embedding):
-        return False
+        return None
 
     vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
     query_type = _infer_query_type(sql_query)
 
     async with state_engine.begin() as conn:
-        await conn.execute(text("""
+        result = await conn.execute(text("""
             INSERT INTO fewshot_examples
                 (natural_language, sql_query, tables_used,
-                 query_type, embedding, auto_learned)
+                 query_type, embedding, auto_learned, source)
             VALUES
                 (:nl, :sql, :tables, :qtype,
-                 CAST(:emb AS vector), :auto)
+                 CAST(:emb AS vector), :auto,
+                 CASE WHEN :auto THEN 'auto' ELSE 'seed' END)
+            RETURNING id
         """), {
             "nl": natural_language,
             "sql": sql_query,
@@ -102,7 +116,23 @@ async def store_fewshot_example(
             "emb": vec_str,
             "auto": auto_learned,
         })
-    return True
+        return int(result.scalar_one())
+
+
+async def disable_fewshot_example(fewshot_id: int) -> bool:
+    """Tombstone one example (explicit reject): never deleted, never re-served.
+
+    Idempotent. The tombstone — not a hard DELETE — preserves the audit trail;
+    retrieval and duplicate checks filter disabled rows, so rejecting also
+    un-blocks re-learning the corrected query (a 0.98 near-duplicate would
+    otherwise pin the bad SQL in the corpus forever).
+    """
+    async with state_engine.begin() as conn:
+        result = await conn.execute(
+            text("UPDATE fewshot_examples SET disabled = TRUE WHERE id = :id"),
+            {"id": fewshot_id},
+        )
+        return result.rowcount > 0
 
 
 def _infer_query_type(sql: str) -> str:

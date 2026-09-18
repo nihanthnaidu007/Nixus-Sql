@@ -254,6 +254,8 @@ describe("HistoryPanel", () => {
     duration_ms: 42,
     row_count: 10,
     created_at: "2026-09-17T10:00:00Z",
+    feedback_verdict: null,
+    fewshot_example_id: null,
   };
 
   it("renders history rows with status", async () => {

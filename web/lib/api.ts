@@ -1028,6 +1028,10 @@ export interface HistoryEntry {
   duration_ms: number | null;
   row_count: number | null;
   created_at: string;
+  /** Explicit human verdict (Phase 3 W1 D1) — null = not yet reviewed. */
+  feedback_verdict: "accept" | "reject" | null;
+  /** Corpus row this run auto-learned, when any (what a reject demotes). */
+  fewshot_example_id: number | null;
 }
 
 /** One page of history, newest first (the API's fixed ordering). */
@@ -1080,4 +1084,34 @@ export async function fetchQueryHistory(
     limit: typeof body?.limit === "number" ? body.limit : 50,
     offset: typeof body?.offset === "number" ? body.offset : 0,
   };
+}
+
+/** Record an explicit verdict on one history row (Phase 3 W1 D1). A reject
+ *  tombstones the run's learned few-shot example server-side — the retrieval
+ *  gate stops serving it (nixus/db/feedback_store.py). */
+export async function postHistoryFeedback(
+  historyId: number,
+  verdict: "accept" | "reject",
+  note?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/history/${historyId}/feedback`,
+    {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(
+        note && note.trim().length > 0 ? { verdict, note: note.trim() } : { verdict },
+      ),
+    },
+  );
+  if (!res.ok) {
+    let msg = `Could not record feedback (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail?.error) msg = String(body.detail.error);
+    } catch {
+      /* keep the default message */
+    }
+    throw new ApiError(msg, res.status);
+  }
 }

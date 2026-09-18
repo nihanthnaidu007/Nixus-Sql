@@ -1,8 +1,10 @@
 from datetime import datetime
 
+# Single source of truth: the cap is enforced by the execute node's
+# fetchmany() — a local copy here could silently drift from it (the exact
+# hazard api/guardrails.py:20-24 warns about).
+from nixus.graph.nodes.execute_query import ROW_FETCH_LIMIT
 from nixus.graph.state import SQLAgentState
-
-ROW_FETCH_LIMIT = 1000
 
 
 def now():

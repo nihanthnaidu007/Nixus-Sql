@@ -134,6 +134,15 @@ def cmd_reembed() -> int:
     return 0
 
 
+# ── reembed-stores (full vector-store rebuild for an embeddings provider switch) ──
+def cmd_reembed_stores(assume_yes: bool) -> int:
+    # The command module owns plan-vs-apply (exit 2 in plan mode) — the CLI only
+    # forwards the flag, mirroring the thin-adapter rule above.
+    from nixus.db import reembed_stores as reembed_stores_module
+
+    return reembed_stores_module.main(assume_yes=assume_yes)
+
+
 # ── health (engines only — a trivial SELECT 1 on each) ───────────────────────
 async def _ping(engine) -> tuple[bool, str | None]:
     try:
@@ -169,6 +178,12 @@ def build_parser() -> argparse.ArgumentParser:
     q = sub.add_parser("query", help="Ask a question against the configured database.")
     q.add_argument("question", help="The natural-language question (quote it).")
     sub.add_parser("reembed", help="Re-introspect + re-embed the target schema.")
+    rs = sub.add_parser(
+        "reembed-stores",
+        help="Rebuild ALL pgvector stores under the active embeddings provider "
+        "(required after switching EMBEDDINGS_PROVIDER). Plan-only without --yes.",
+    )
+    rs.add_argument("--yes", action="store_true", help="Apply the destructive rebuild.")
     sub.add_parser("health", help="Check state_db + target_db reachability.")
     return parser
 
@@ -179,6 +194,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_query(args.question)
     if args.command == "reembed":
         return cmd_reembed()
+    if args.command == "reembed-stores":
+        return cmd_reembed_stores(assume_yes=args.yes)
     if args.command == "health":
         return cmd_health()
     return 2  # unreachable: argparse enforces a valid subcommand

@@ -11,8 +11,11 @@
  *
  * Shape:
  *   · Always visible — a small dot + "database connected" / "database unavailable"
- *     from /health (B13). LLM/tracing flags are shown quietly, factually: a false
- *     flag reads muted ("LLM unavailable"), never faked green.
+ *     from /health (B13), plus the ACTIVE embeddings provider's own quiet line
+ *     ("embeddings: ollama (connected)") — the provider the API actually embeds
+ *     with, never an inactive provider's flag read as failure. LLM/tracing flags
+ *     are shown quietly, factually: a false flag reads muted ("LLM unavailable"),
+ *     never faked green.
  *   · A collapsed "system status" toggle reveals cache + few-shot stats (B14 + B15),
  *     so they're available without cluttering. Real fields only; a zero stat is shown
  *     factually (honest absence).
@@ -96,9 +99,17 @@ export function SystemStatus() {
         <span className={`sysstatus-dot is-${dbState}`} aria-hidden />
         <span className="sysstatus-db">{dbLabel}</span>
 
-        {/* LLM / tracing flags — shown quietly only when health is known, and only
-            as a muted note when something is OFF (a green "all good" needs no
-            announcement; an honest "unavailable" does). */}
+        {/* Embeddings — the ACTIVE provider's own line (e.g. "embeddings: ollama
+            (connected)"). Under EMBEDDINGS_PROVIDER=ollama openai_connected is false
+            by definition (not active, not probed), so this keys off the active
+            provider's flag and never reads an inactive one as a failure. */}
+        {healthLoaded && health && (
+          <EmbeddingsStatus health={health} />
+        )}
+
+        {/* LLM flag — shown quietly only when health is known, and only as a muted
+            note when it is OFF (a green "all good" needs no announcement; an honest
+            "unavailable" does). Embeddings have the dedicated segment above. */}
         {healthLoaded && health && (
           <LlmNote health={health} />
         )}
@@ -145,23 +156,37 @@ export function SystemStatus() {
   );
 }
 
-/** A muted note for any LLM/tracing flag that is OFF — honest, never alarm. When all
- *  flags are healthy this renders nothing (restraint: no green to announce). */
+/** The ACTIVE embeddings provider's own status segment — "embeddings: ollama
+ *  (connected)" — replacing any openai-only framing. Under ollama the API never
+ *  probes OpenAI (openai_connected is false by definition), so the connectivity
+ *  shown is the active provider's flag. Legacy backends without the provider
+ *  fields fall back to the openai flag, muted — honest, never faked connected. */
+function EmbeddingsStatus({ health }: { health: HealthStatus }) {
+  const provider = health.embeddings_provider;
+  if (provider) {
+    const connected =
+      provider === "ollama"
+        ? Boolean(health.ollama_connected)
+        : health.openai_connected;
+    return (
+      <span className="sysstatus-note">
+        · embeddings: {provider} ({connected ? "connected" : "unavailable"})
+      </span>
+    );
+  }
+  // Old backend (no provider fields): the only embeddings signal it ever had
+  // was the OpenAI flag — surface its absence quietly, as before.
+  if (!health.openai_connected) {
+    return <span className="sysstatus-note">· embeddings unavailable</span>;
+  }
+  return null;
+}
+
+/** A muted note for the LLM (Anthropic) flag when it is OFF — honest, never
+ *  alarm. Embeddings report through the dedicated active-provider segment. */
 function LlmNote({ health }: { health: HealthStatus }) {
-  const down: string[] = [];
-  if (!health.anthropic_connected) down.push("LLM");
-  // The trustworthy embeddings flag depends on the ACTIVE provider: under
-  // ollama the API never probes OpenAI (openai_connected is false by
-  // definition), so "embeddings unavailable" must key off ollama_connected.
-  const embeddingsDown =
-    health.embeddings_provider === "ollama"
-      ? !health.ollama_connected
-      : !health.openai_connected;
-  if (embeddingsDown) down.push("embeddings");
-  if (down.length === 0) return null;
-  return (
-    <span className="sysstatus-note">· {down.join(" + ")} unavailable</span>
-  );
+  if (health.anthropic_connected) return null;
+  return <span className="sysstatus-note">· LLM unavailable</span>;
 }
 
 /** One labeled stat group inside the expander. Honest absence: an unreachable

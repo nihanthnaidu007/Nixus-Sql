@@ -640,12 +640,32 @@ async def _check_llm_connectivity() -> dict:
             logger.warning(f"OpenAI health check failed: {type(e).__name__}: {e}")
 
     embeddings_ok = ollama_ok if provider == "ollama" else openai_ok
+    # Degraded reasons name the actionable fix for each failed dependency. Only
+    # the ACTIVE embeddings provider can produce an embeddings reason — an
+    # inactive provider's flag is informational, never a failure.
+    reasons: list[str] = []
+    if not anthropic_ok:
+        reasons.append(
+            "Anthropic (SQL generation) not connected — set a valid ANTHROPIC_API_KEY."
+        )
+    if provider == "ollama" and not ollama_ok:
+        reasons.append(
+            f"Ollama embeddings unreachable at {settings.ollama_base_url} — start "
+            "Ollama (ollama serve) or set EMBEDDINGS_PROVIDER=openai with a valid "
+            "OPENAI_API_KEY."
+        )
+    elif provider == "openai" and not openai_ok:
+        reasons.append(
+            "OpenAI embeddings not connected — set a valid OPENAI_API_KEY or set "
+            "EMBEDDINGS_PROVIDER=ollama for local embeddings."
+        )
     _llm_health_cache.update({
         "embeddings_provider": provider,
         "anthropic_connected": anthropic_ok,
         "openai_connected": openai_ok,
         "ollama_connected": ollama_ok,
         "status": "ok" if (anthropic_ok and embeddings_ok) else "degraded",
+        "degraded_reasons": reasons,
         "checked_at": now,
     })
     logger.info(
@@ -669,11 +689,29 @@ async def health():
 
     overall = "ok" if (db_ok and llm_health["status"] == "ok") else "degraded"
 
+    # Compose the actionable reasons: the LLM probe's reasons (which already key
+    # off the ACTIVE embeddings provider) plus the DB, which the probe never sees.
+    reasons: list[str] = list(llm_health.get("degraded_reasons", []))
+    if not db_ok:
+        reasons.insert(0, "PostgreSQL unreachable — check DATABASE_URL connectivity.")
+
     return {
         "status": overall,
         "db_connected": db_ok,
         "anthropic_connected": llm_health.get("anthropic_connected", False),
         "openai_connected": llm_health.get("openai_connected", False),
+        # The ACTIVE-provider contract: under EMBEDDINGS_PROVIDER=ollama,
+        # openai_connected is False by definition ("not active, not probed"), so
+        # consumers key embeddings health off ollama_connected and status degrades
+        # only on the active provider's flag. Under openai, behavior is unchanged.
+        "embeddings_provider": llm_health.get("embeddings_provider")
+        or settings.embeddings_provider,
+        "ollama_connected": bool(llm_health.get("ollama_connected", False)),
+        # Dimension the vector store is built for (768 under ollama/nomic,
+        # 1536 under openai) — so consumers can verify the demo's re-embedding
+        # state without reading settings.
+        "embedding_dim": settings.embedding_dim,
+        "degraded_reasons": reasons,
         "langsmith_tracing": is_tracing_enabled(),
         "llm_last_checked": llm_health.get("checked_at", 0),
         "nodes": [

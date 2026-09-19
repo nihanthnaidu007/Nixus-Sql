@@ -839,11 +839,18 @@ export interface HealthStatus {
   status: string;
   db_connected: boolean;
   anthropic_connected: boolean;
+  /** The INACTIVE embeddings provider's flag. Under ollama this is false by
+   * definition (not active, not probed) — never read it as an embeddings failure. */
   openai_connected: boolean;
-  /** Present on newer backends: which provider the API actually embeds with. */
+  /** Which provider the API actually embeds with — always set by current
+   * backends; absent on legacy ones (the field drives the honest fallback). */
   embeddings_provider?: "openai" | "ollama";
-  /** Reachability of the Ollama endpoint — populated only under ollama. */
+  /** Reachability of the Ollama endpoint — the embeddings signal under ollama. */
   ollama_connected?: boolean;
+  /** Dimension the vector store is built for (768 under ollama/nomic, 1536 openai). */
+  embedding_dim?: number;
+  /** Actionable fix for each degraded dependency — empty when status is ok. */
+  degraded_reasons?: string[];
   langsmith_tracing: boolean;
   version: string;
 }

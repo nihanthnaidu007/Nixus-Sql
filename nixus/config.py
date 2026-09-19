@@ -23,7 +23,7 @@ See the 1.1e report for the rationale.
 """
 import os
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -140,6 +140,34 @@ class Settings(BaseSettings):
     # when non-empty); re-embed required to apply changes.
     dbt_manifest_path: str | None = Field(default=None)    # NIXUS_DBT_MANIFEST_PATH
 
+    # ── Embeddings provider (provider resilience) ────────────────────────────
+    # Generation is Anthropic-only (every graph node uses ChatAnthropic), but the
+    # retrieval layer embeds queries/schema/examples. 'openai' keeps the original
+    # text-embedding-3-small behavior; 'ollama' serves embeddings from a local
+    # Ollama instance — the no-OpenAI-key path for demos and air-gapped use.
+    # Anything other than openai|ollama is a startup-time error (fail fast on a
+    # mistyped EMBEDDINGS_PROVIDER rather than a confusing failure at first call).
+    embeddings_provider: str = Field(default="openai")       # EMBEDDINGS_PROVIDER
+    ollama_base_url: str = Field(default="http://localhost:11434")  # OLLAMA_BASE_URL
+    ollama_embedding_model: str = Field(default="nomic-embed-text")  # OLLAMA_EMBEDDING_MODEL
+    # Expected width of the Ollama model's vectors, used for dimension-aware store
+    # creation BEFORE the first call and verified against the model's actual output
+    # on first use (a mismatch fails fast with an actionable message — pgvector
+    # rejects mismatched vectors with a raw DB error otherwise).
+    ollama_embedding_dim: int = Field(default=768)           # OLLAMA_EMBEDDING_DIM
+
+    @field_validator("embeddings_provider")
+    @classmethod
+    def _validate_embeddings_provider(cls, v: str) -> str:
+        """Normalize and fail fast on an unknown provider — a mistyped
+        EMBEDDINGS_PROVIDER must crash at startup, not at the first query."""
+        normalized = v.strip().lower()
+        if normalized not in ("openai", "ollama"):
+            raise ValueError(
+                f"EMBEDDINGS_PROVIDER must be 'openai' or 'ollama' (got {v!r})."
+            )
+        return normalized
+
 
     # ── API authentication (X-API-Key) ──────────────────────────────────────
     # The shared key every /api client must send as the X-API-Key header (the
@@ -196,6 +224,21 @@ class Settings(BaseSettings):
     def target_admin_url(self) -> str | None:
         """Writable OWNER URL to the target DB — bootstrap/seed scripts only."""
         return self.target_admin_database_url
+
+    @property
+    def embedding_dim(self) -> int:
+        """The active embeddings provider's vector width.
+
+        pgvector store columns are created at this width (dimension-aware
+        creation) and every embedding is verified against it on first use.
+        """
+        provider = self.embeddings_provider.strip().lower()
+        if provider not in ("openai", "ollama"):
+            raise ValueError(
+                f"EMBEDDINGS_PROVIDER must be 'openai' or 'ollama' "
+                f"(got {self.embeddings_provider!r})."
+            )
+        return self.ollama_embedding_dim if provider == "ollama" else 1536
 
 
 # Single module-level instance imported by every call site. Reads the

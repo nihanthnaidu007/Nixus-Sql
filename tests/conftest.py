@@ -1,8 +1,9 @@
 """Offline-suite environment defaults.
 
 ``tests/`` is the offline unit suite: every LLM call and database touchpoint is
-monkeypatched, but IMPORTING the application still constructs the OpenAI client
-(nixus/utils/embeddings.py) and the SQLAlchemy engines eagerly, which raise on
+monkeypatched. IMPORTING the application is import-side-effect free for the
+OpenAI client (nixus/utils/embeddings.py constructs it lazily on first openai
+call), but the SQLAlchemy engines are still built eagerly, which raises on
 missing configuration. load_dotenv() runs first so values from a real .env win;
 setdefault fills only what is genuinely absent. The fill values are the
 .env.example SENTINELS on purpose: nixus.config.is_placeholder recognizes them,

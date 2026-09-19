@@ -565,6 +565,8 @@ export async function runQueryStreaming(
   let buffer = "";
   let finalResult: NormalizedResult | null = null;
   let streamError: string | null = null;
+  let streamErrorStatus: number | undefined;
+  let streamErrorTraceId: string | undefined;
 
   try {
     for (;;) {
@@ -589,9 +591,26 @@ export async function runQueryStreaming(
           if (d) finalResult = normalize(d as unknown as NixusResponse);
         } else if (ev.event === "error") {
           const d = safeJsonObject(ev.data);
-          streamError =
-            (d && typeof d.error === "string" ? d.error : null) ??
-            "stream reported an error";
+          if (d && typeof d.error === "string") {
+            // Provider-failure envelopes (typed 503 semantics, api/errors.py)
+            // carry `detail` with the actionable fix — surface it alongside the
+            // envelope title, never just the bare "LLM provider unavailable".
+            streamError =
+              typeof d.detail === "string" && d.detail
+                ? `${d.error} — ${d.detail}`
+                : d.error;
+            // An envelope-shaped payload (it names the provider) is the API's
+            // FINAL verdict — mark it 503 so runWithFallback re-throws instead
+            // of re-running the same doomed query through /run.
+            streamErrorStatus =
+              typeof d.provider === "string" && d.provider ? 503 : undefined;
+            streamErrorTraceId =
+              typeof d.trace_id === "string" && d.trace_id
+                ? d.trace_id
+                : undefined;
+          } else {
+            streamError = "stream reported an error";
+          }
         }
       }
     }
@@ -604,7 +623,8 @@ export async function runQueryStreaming(
     }
   }
 
-  if (streamError) throw new ApiError(streamError);
+  if (streamError)
+    throw new ApiError(streamError, streamErrorStatus, streamErrorTraceId);
   // A stream that closed without a terminal `complete` is unusable → fall back.
   if (!finalResult)
     throw new ApiError("stream ended without a terminal result");
@@ -820,6 +840,10 @@ export interface HealthStatus {
   db_connected: boolean;
   anthropic_connected: boolean;
   openai_connected: boolean;
+  /** Present on newer backends: which provider the API actually embeds with. */
+  embeddings_provider?: "openai" | "ollama";
+  /** Reachability of the Ollama endpoint — populated only under ollama. */
+  ollama_connected?: boolean;
   langsmith_tracing: boolean;
   version: string;
 }

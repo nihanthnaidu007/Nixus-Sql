@@ -150,7 +150,14 @@ export function SystemStatus() {
 function LlmNote({ health }: { health: HealthStatus }) {
   const down: string[] = [];
   if (!health.anthropic_connected) down.push("LLM");
-  if (!health.openai_connected) down.push("embeddings");
+  // The trustworthy embeddings flag depends on the ACTIVE provider: under
+  // ollama the API never probes OpenAI (openai_connected is false by
+  // definition), so "embeddings unavailable" must key off ollama_connected.
+  const embeddingsDown =
+    health.embeddings_provider === "ollama"
+      ? !health.ollama_connected
+      : !health.openai_connected;
+  if (embeddingsDown) down.push("embeddings");
   if (down.length === 0) return null;
   return (
     <span className="sysstatus-note">· {down.join(" + ")} unavailable</span>

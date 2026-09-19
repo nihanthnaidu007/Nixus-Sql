@@ -11,6 +11,7 @@ import {
   exportResult,
   fetchQueryHistory,
   fetchSavedQueries,
+  runQueryStreaming,
 } from "./api";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -224,5 +225,77 @@ describe("fetchQueryHistory", () => {
     expect(page.items).toEqual([]);
     expect(page.total).toBe(0);
     expect(stub.mock.calls[0][0]).toBe(`${API_BASE_URL}/api/v1/history`);
+  });
+});
+
+describe("runQueryStreaming", () => {
+  /** A 200 SSE Response whose body replays the given frames then closes. */
+  function sseResponse(frames: string[]): Response {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(encoder.encode(frame));
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("surfaces the provider-failure envelope's actionable detail from an error event", async () => {
+    // api/main.py emits this envelope as an SSE error event when a provider
+    // fails mid-stream (typed 503 semantics); the fix line must reach the UI.
+    const providerErrorFrame =
+      'event: error\ndata: {"error": "LLM provider unavailable", "detail": ' +
+        '"Embedding provider \'openai\' rejected the configured credentials ' +
+        "(authentication failed) — set a valid OPENAI_API_KEY, or set " +
+        'EMBEDDINGS_PROVIDER=ollama to embed locally with Ollama.", ' +
+        '"provider": "openai", "trace_id": "abc"}\n\n';
+
+    vi.mocked(fetch).mockResolvedValue(sseResponse([providerErrorFrame]));
+    await expect(runQueryStreaming("q")).rejects.toThrow(/OPENAI_API_KEY/);
+
+    // A Response body is single-use — re-mock so the second read gets a
+    // fresh stream instead of the consumed one.
+    vi.mocked(fetch).mockResolvedValue(sseResponse([providerErrorFrame]));
+    await expect(runQueryStreaming("q")).rejects.toThrow(
+      /LLM provider unavailable — Embedding provider 'openai'/,
+    );
+
+    // Fresh body again (single-use) for the status/trace assertion.
+    vi.mocked(fetch).mockResolvedValue(sseResponse([providerErrorFrame]));
+    // status 503 marks a FINAL provider verdict: runWithFallback (app/page.tsx)
+    // re-throws these instead of re-running the doomed query through /run.
+    await expect(runQueryStreaming("q")).rejects.toMatchObject({
+      status: 503,
+      traceId: "abc",
+    });
+  });
+
+  it("keeps a bare error message when the event carries no detail", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(['event: error\ndata: {"error": "boom"}\n\n']),
+    );
+
+    await expect(runQueryStreaming("q")).rejects.toThrow(/^boom$/);
+
+    // No `provider` field → not an envelope → NO status, so the /run
+    // fallback in app/page.tsx still applies to these.
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(['event: error\ndata: {"error": "boom"}\n\n']),
+    );
+    await expect(runQueryStreaming("q")).rejects.toMatchObject({
+      status: undefined,
+    });
   });
 });

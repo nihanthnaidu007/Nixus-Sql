@@ -17,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from api.analytics import router as analytics_router
 from api.auth import APIKeyMiddleware, configured_api_key
+from api.errors import ProviderEnvelopeMiddleware, generic_500_payload
 from api.export import router as export_router
 from api.guardrails import router as guardrails_router
 from api.history import router as history_router
@@ -71,6 +72,29 @@ async def lifespan(app: FastAPI):
         await asyncio.to_thread(init_database)
     except Exception:
         logger.exception("Database initialization failed; cache/few-shot endpoints may error until init succeeds")
+
+    # Dimension-aware store alignment (provider resilience): fresh installs get
+    # vector stores at the ACTIVE provider's width; stores still holding rows at
+    # a foreign width are reported loudly, never truncated here — rebuilding
+    # them is `nixus reembed-stores --yes`, an explicit announced action.
+    try:
+        from nixus.db.store_dims import ensure_store_dims
+
+        resized, blocked = await ensure_store_dims(settings.embedding_dim)
+        for entry in resized:
+            logger.info(
+                "Vector store resized to the active provider's width "
+                "(%d dims): %s", settings.embedding_dim, entry,
+            )
+        for entry in blocked:
+            logger.error(
+                "Vector store %s holds rows at a different width than the active "
+                "embeddings provider (%s, %d dims) — retrieval will fail against it. "
+                "Run `nixus reembed-stores --yes` to rebuild it.",
+                entry, settings.embeddings_provider, settings.embedding_dim,
+            )
+    except Exception:
+        logger.exception("Vector store dimension alignment failed; continuing anyway")
 
     try:
         await init_checkpointer()
@@ -155,6 +179,14 @@ ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 # API-key auth FIRST, then CORS: add_middleware prepends, so CORS ends up the
 # OUTERMOST layer and answers browser preflights (OPTIONS) itself — the auth
 # middleware only ever sees real requests, which carry the X-API-Key header.
+# ProviderEnvelopeMiddleware is registered BEFORE both, so it ends up
+# INNERMOST: route-level provider failures are converted to typed envelopes
+# INSIDE the CORS layer and their responses carry CORS headers (registered
+# exception handlers for the generic Exception run OUTSIDE CORSMiddleware in
+# Starlette — ServerErrorMiddleware — so envelope responses from that layer
+# reach browsers bare and the browser blocks them as "Failed to fetch").
+app.add_middleware(ProviderEnvelopeMiddleware)
+
 app.add_middleware(APIKeyMiddleware)
 
 app.add_middleware(
@@ -174,9 +206,11 @@ router = APIRouter(prefix="/api/v1")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch any uncaught exception from a non-streaming endpoint, log the
-    full traceback server-side, and return a structured JSON error with a
-    short trace_id the user can quote when reporting the failure.
+    """Last-resort 500 for exceptions raised ABOVE ProviderEnvelopeMiddleware
+    (e.g. inside another middleware). Route-level provider failures are already
+    classified and answered — with CORS headers — by ProviderEnvelopeMiddleware
+    (api/errors.py), which runs INSIDE CORSMiddleware; responses this handler
+    returns go out bare of CORS headers, and browsers block them.
 
     Note: this handler does NOT intercept errors that originate inside an
     in-flight SSE stream — by that point the response has already begun
@@ -192,14 +226,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         # exception in) — hand it over explicitly for the traceback.
         exc_info=exc,
     )
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "An unexpected error occurred.",
-            "trace_id": trace_id,
-            "type": type(exc).__name__,
-        },
-    )
+    return JSONResponse(status_code=500, content=generic_500_payload(exc, trace_id))
 
 
 @app.exception_handler(UnknownSessionError)
@@ -451,7 +478,24 @@ async def stream_agent(req: StreamRequest):
                     yield {"event": "complete", "data": json.dumps(final, default=str)}
 
         except Exception as e:
-            yield {"event": "error", "data": json.dumps({"error": str(e), "is_complete": True})}
+            # Provider failures mid-stream get the same typed envelope as /run
+            # (503 semantics): name the provider and the actionable fix, never
+            # a raw str(exc) — the historical path died with a bare provider
+            # traceback line the UI could only show verbatim.
+            from api.errors import classify_provider_failure, provider_failure_payload
+
+            failure = classify_provider_failure(e)
+            if failure is not None:
+                trace_id = str(uuid.uuid4())[:8]
+                logger.error(
+                    f"[{trace_id}] Provider failure mid-stream: "
+                    f"{type(e).__name__}: {failure.detail}",
+                )
+                payload = provider_failure_payload(failure, trace_id)
+                payload["is_complete"] = True
+                yield {"event": "error", "data": json.dumps(payload, default=str)}
+            else:
+                yield {"event": "error", "data": json.dumps({"error": str(e), "is_complete": True})}
 
     return EventSourceResponse(event_generator())
 
@@ -557,6 +601,8 @@ async def _check_llm_connectivity() -> dict:
 
     anthropic_ok = False
     openai_ok = False
+    ollama_ok = False
+    provider = settings.embeddings_provider
 
     # A placeholder/empty key is reported NOT connected WITHOUT any API call.
     # This is the exact false-confidence case the clean bring-up exposed:
@@ -571,7 +617,19 @@ async def _check_llm_connectivity() -> dict:
         except Exception as e:
             logger.warning(f"Anthropic health check failed: {type(e).__name__}: {e}")
 
-    if is_placeholder(settings.openai_api_key):
+    # Only the ACTIVE embeddings provider is probed. Under ollama, an OpenAI
+    # probe would burn quota and report a provider the pipeline never calls;
+    # `openai_connected` stays False there meaning "not active/not checked",
+    # while `ollama_connected` carries the real signal.
+    if provider == "ollama":
+        from nixus.utils.embeddings import check_ollama_reachable
+
+        ollama_ok = await check_ollama_reachable()
+        if not ollama_ok:
+            logger.warning(
+                f"Ollama not reachable at {settings.ollama_base_url} — reporting not connected."
+            )
+    elif is_placeholder(settings.openai_api_key):
         logger.info("OpenAI key not configured (placeholder) — reporting not connected.")
     else:
         try:
@@ -581,14 +639,18 @@ async def _check_llm_connectivity() -> dict:
         except Exception as e:
             logger.warning(f"OpenAI health check failed: {type(e).__name__}: {e}")
 
+    embeddings_ok = ollama_ok if provider == "ollama" else openai_ok
     _llm_health_cache.update({
+        "embeddings_provider": provider,
         "anthropic_connected": anthropic_ok,
         "openai_connected": openai_ok,
-        "status": "ok" if (anthropic_ok and openai_ok) else "degraded",
+        "ollama_connected": ollama_ok,
+        "status": "ok" if (anthropic_ok and embeddings_ok) else "degraded",
         "checked_at": now,
     })
     logger.info(
-        f"LLM connectivity checked: anthropic={anthropic_ok} openai={openai_ok}"
+        f"LLM connectivity checked: anthropic={anthropic_ok} "
+        f"embeddings={provider}:{embeddings_ok}"
     )
     return _llm_health_cache.copy()
 

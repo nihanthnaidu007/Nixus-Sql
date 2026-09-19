@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Health payload omitted the active embeddings provider**: `/api/v1/health` and
+  `/api/health` now include `embeddings_provider`, `ollama_connected`,
+  `embedding_dim`, and `degraded_reasons` (actionable fix per degraded
+  dependency). Status semantics key off the ACTIVE embeddings provider only —
+  under `EMBEDDINGS_PROVIDER=ollama`, an unprobed `openai_connected: false` no
+  longer reads as a failure. The UI status line shows the active provider
+  (`embeddings: ollama (connected)`) instead of an openai-only framing that
+  could falsely claim "embeddings unavailable" on the ollama demo.
 - **Fresh-clone Docker build was broken**: the `Dockerfile` COPYs
   `requirements.lock`, but `.gitignore`'s `*.lock` pattern excluded it from git.
   The lockfile (full transitive pin set) is now committed and un-ignored.

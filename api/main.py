@@ -17,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from api.analytics import router as analytics_router
 from api.auth import APIKeyMiddleware, configured_api_key
+from api.errors import ProviderEnvelopeMiddleware, generic_500_payload
 from api.export import router as export_router
 from api.guardrails import router as guardrails_router
 from api.history import router as history_router
@@ -178,6 +179,14 @@ ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 # API-key auth FIRST, then CORS: add_middleware prepends, so CORS ends up the
 # OUTERMOST layer and answers browser preflights (OPTIONS) itself — the auth
 # middleware only ever sees real requests, which carry the X-API-Key header.
+# ProviderEnvelopeMiddleware is registered BEFORE both, so it ends up
+# INNERMOST: route-level provider failures are converted to typed envelopes
+# INSIDE the CORS layer and their responses carry CORS headers (registered
+# exception handlers for the generic Exception run OUTSIDE CORSMiddleware in
+# Starlette — ServerErrorMiddleware — so envelope responses from that layer
+# reach browsers bare and the browser blocks them as "Failed to fetch").
+app.add_middleware(ProviderEnvelopeMiddleware)
+
 app.add_middleware(APIKeyMiddleware)
 
 app.add_middleware(
@@ -197,14 +206,11 @@ router = APIRouter(prefix="/api/v1")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch any uncaught exception from a non-streaming endpoint, log the
-    full traceback server-side, and return a structured JSON error with a
-    short trace_id the user can quote when reporting the failure.
-
-    Known LLM/embeddings provider failures are classified FIRST (api.errors)
-    and answered with a typed 503 envelope that names the provider and the
-    actionable fix — the historical behavior surfaced those as a raw 500
-    "unexpected error" with no explanation (provider resilience defect).
+    """Last-resort 500 for exceptions raised ABOVE ProviderEnvelopeMiddleware
+    (e.g. inside another middleware). Route-level provider failures are already
+    classified and answered — with CORS headers — by ProviderEnvelopeMiddleware
+    (api/errors.py), which runs INSIDE CORSMiddleware; responses this handler
+    returns go out bare of CORS headers, and browsers block them.
 
     Note: this handler does NOT intercept errors that originate inside an
     in-flight SSE stream — by that point the response has already begun
@@ -213,20 +219,6 @@ async def global_exception_handler(request: Request, exc: Exception):
     structured `{"event": "error", ...}` SSE event.
     """
     trace_id = str(uuid.uuid4())[:8]
-
-    from api.errors import classify_provider_failure, provider_failure_payload
-
-    failure = classify_provider_failure(exc)
-    if failure is not None:
-        logger.error(
-            f"[{trace_id}] Provider failure on {request.method} {request.url.path}: "
-            f"{type(exc).__name__}: {failure.detail}",
-        )
-        return JSONResponse(
-            status_code=503,
-            content=provider_failure_payload(failure, trace_id),
-        )
-
     logger.error(
         f"[{trace_id}] Unhandled exception on {request.method} {request.url.path}: "
         f"{type(exc).__name__}: {exc}",
@@ -234,14 +226,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         # exception in) — hand it over explicitly for the traceback.
         exc_info=exc,
     )
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "An unexpected error occurred.",
-            "trace_id": trace_id,
-            "type": type(exc).__name__,
-        },
-    )
+    return JSONResponse(status_code=500, content=generic_500_payload(exc, trace_id))
 
 
 @app.exception_handler(UnknownSessionError)

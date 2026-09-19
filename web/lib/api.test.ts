@@ -271,6 +271,15 @@ describe("runQueryStreaming", () => {
     await expect(runQueryStreaming("q")).rejects.toThrow(
       /LLM provider unavailable — Embedding provider 'openai'/,
     );
+
+    // Fresh body again (single-use) for the status/trace assertion.
+    vi.mocked(fetch).mockResolvedValue(sseResponse([providerErrorFrame]));
+    // status 503 marks a FINAL provider verdict: runWithFallback (app/page.tsx)
+    // re-throws these instead of re-running the doomed query through /run.
+    await expect(runQueryStreaming("q")).rejects.toMatchObject({
+      status: 503,
+      traceId: "abc",
+    });
   });
 
   it("keeps a bare error message when the event carries no detail", async () => {
@@ -279,5 +288,14 @@ describe("runQueryStreaming", () => {
     );
 
     await expect(runQueryStreaming("q")).rejects.toThrow(/^boom$/);
+
+    // No `provider` field → not an envelope → NO status, so the /run
+    // fallback in app/page.tsx still applies to these.
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(['event: error\ndata: {"error": "boom"}\n\n']),
+    );
+    await expect(runQueryStreaming("q")).rejects.toMatchObject({
+      status: undefined,
+    });
   });
 });

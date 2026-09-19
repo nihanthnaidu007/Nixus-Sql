@@ -120,9 +120,17 @@ export default function Page() {
         },
         opts,
       );
-    } catch {
-      // Streaming failed — drop the live view and fall back to the proven /run.
-      // (If /run throws too, it propagates to the caller's catch → clean error.)
+    } catch (streamError) {
+      // A typed provider envelope (503) is the API's FINAL answer: the stream
+      // reached the API and the API ruled the provider unusable. Re-running
+      // /run would repeat the same doomed provider call (plus another
+      // generation-node spend) only to fail identically — surface it now.
+      if (streamError instanceof ApiError && streamError.status === 503) {
+        throw streamError;
+      }
+      // Any other streaming failure — drop the live view and fall back to the
+      // proven /run. (If /run throws too, it propagates to the caller's catch
+      // → clean error.)
       setLive(null);
       return await runQuery(userQuery, opts);
     }

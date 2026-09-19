@@ -200,3 +200,37 @@ def test_stream_non_provider_failure_keeps_bare_error_event(
     )
     assert "boom" in resp.text
     assert "LLM provider unavailable" not in resp.text
+
+
+# ── CORS delivery (browser regression) ───────────────────────────────────────
+# The envelope is worthless if the browser cannot READ it: responses produced by
+# the generic `Exception` handler (ServerErrorMiddleware) leave the app OUTSIDE
+# CORSMiddleware, so browsers block them and the UI shows "Failed to fetch"
+# instead of the actionable fix. ProviderEnvelopeMiddleware (api/errors.py) runs
+# INSIDE CORS, so every envelope ships with CORS headers.
+
+
+def test_provider_503_envelope_carries_cors_origin(_auth, client, monkeypatch):
+    _patch_registry(monkeypatch)
+    _fail_run(monkeypatch, _openai_auth_error())
+    resp = client.post(
+        "/api/v1/run",
+        json={"user_query": "q", "session_id": "s"},
+        headers={**HEADERS, "Origin": "http://localhost:3000"},
+    )
+
+    assert resp.status_code == 503
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+def test_generic_500_is_also_cors_deliverable(_auth, client, monkeypatch):
+    _patch_registry(monkeypatch)
+    _fail_run(monkeypatch, ValueError("a genuine app bug"))
+    resp = client.post(
+        "/api/v1/run",
+        json={"user_query": "q", "session_id": "s"},
+        headers={**HEADERS, "Origin": "http://localhost:3000"},
+    )
+
+    assert resp.status_code == 500
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"

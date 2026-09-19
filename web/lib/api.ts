@@ -565,6 +565,8 @@ export async function runQueryStreaming(
   let buffer = "";
   let finalResult: NormalizedResult | null = null;
   let streamError: string | null = null;
+  let streamErrorStatus: number | undefined;
+  let streamErrorTraceId: string | undefined;
 
   try {
     for (;;) {
@@ -597,6 +599,15 @@ export async function runQueryStreaming(
               typeof d.detail === "string" && d.detail
                 ? `${d.error} — ${d.detail}`
                 : d.error;
+            // An envelope-shaped payload (it names the provider) is the API's
+            // FINAL verdict — mark it 503 so runWithFallback re-throws instead
+            // of re-running the same doomed query through /run.
+            streamErrorStatus =
+              typeof d.provider === "string" && d.provider ? 503 : undefined;
+            streamErrorTraceId =
+              typeof d.trace_id === "string" && d.trace_id
+                ? d.trace_id
+                : undefined;
           } else {
             streamError = "stream reported an error";
           }
@@ -612,7 +623,8 @@ export async function runQueryStreaming(
     }
   }
 
-  if (streamError) throw new ApiError(streamError);
+  if (streamError)
+    throw new ApiError(streamError, streamErrorStatus, streamErrorTraceId);
   // A stream that closed without a terminal `complete` is unusable → fall back.
   if (!finalResult)
     throw new ApiError("stream ended without a terminal result");

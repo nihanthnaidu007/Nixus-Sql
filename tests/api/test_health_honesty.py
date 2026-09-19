@@ -39,6 +39,53 @@ def test_placeholder_keys_report_not_connected_without_api_call(monkeypatch):
     assert result["status"] == "degraded"
 
 
+def test_ollama_provider_reports_ollama_connected_and_never_probes_openai(
+    monkeypatch,
+):
+    """Under EMBEDDINGS_PROVIDER=ollama the health payload must key embeddings
+    off Ollama reachability — OpenAI is never constructed, never probed."""
+    monkeypatch.setattr(main.settings, "embeddings_provider", "ollama")
+    monkeypatch.setattr(main.settings, "anthropic_api_key", "your_anthropic_api_key_here")
+
+    import openai
+
+    def _boom(*a, **k):
+        raise AssertionError("OpenAI client must NOT be probed under ollama")
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _boom)
+
+    async def _ollama_up():
+        return True
+
+    monkeypatch.setattr(
+        "nixus.utils.embeddings.check_ollama_reachable", _ollama_up
+    )
+
+    result = asyncio.run(main._check_llm_connectivity())
+    assert result["embeddings_provider"] == "ollama"
+    assert result["ollama_connected"] is True
+    assert result["openai_connected"] is False  # not probed — inactive provider
+    # anthropic key is the placeholder sentinel → the honest status is degraded.
+    assert result["anthropic_connected"] is False
+    assert result["status"] == "degraded"
+
+
+def test_ollama_provider_reports_degraded_when_ollama_unreachable(monkeypatch):
+    monkeypatch.setattr(main.settings, "embeddings_provider", "ollama")
+    monkeypatch.setattr(main.settings, "anthropic_api_key", "your_anthropic_api_key_here")
+
+    async def _ollama_down():
+        return False
+
+    monkeypatch.setattr(
+        "nixus.utils.embeddings.check_ollama_reachable", _ollama_down
+    )
+
+    result = asyncio.run(main._check_llm_connectivity())
+    assert result["ollama_connected"] is False
+    assert result["status"] == "degraded"
+
+
 def test_real_key_uses_probe_and_reports_actual_result(monkeypatch):
     monkeypatch.setattr(main.settings, "anthropic_api_key", "sk-ant-real-1234567890")
     monkeypatch.setattr(main.settings, "openai_api_key", "sk-proj-real-1234567890")

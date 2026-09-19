@@ -589,9 +589,17 @@ export async function runQueryStreaming(
           if (d) finalResult = normalize(d as unknown as NixusResponse);
         } else if (ev.event === "error") {
           const d = safeJsonObject(ev.data);
-          streamError =
-            (d && typeof d.error === "string" ? d.error : null) ??
-            "stream reported an error";
+          if (d && typeof d.error === "string") {
+            // Provider-failure envelopes (typed 503 semantics, api/errors.py)
+            // carry `detail` with the actionable fix — surface it alongside the
+            // envelope title, never just the bare "LLM provider unavailable".
+            streamError =
+              typeof d.detail === "string" && d.detail
+                ? `${d.error} — ${d.detail}`
+                : d.error;
+          } else {
+            streamError = "stream reported an error";
+          }
         }
       }
     }
@@ -820,6 +828,10 @@ export interface HealthStatus {
   db_connected: boolean;
   anthropic_connected: boolean;
   openai_connected: boolean;
+  /** Present on newer backends: which provider the API actually embeds with. */
+  embeddings_provider?: "openai" | "ollama";
+  /** Reachability of the Ollama endpoint — populated only under ollama. */
+  ollama_connected?: boolean;
   langsmith_tracing: boolean;
   version: string;
 }
